@@ -1,102 +1,57 @@
 #ifndef FSI_OS_H
 #define FSI_OS_H
 
+#include <inttypes.h>
+#include <assert.h>
+
+#include "fsi_utils.h"
+
 #ifdef _WIN32
     #include <windows.h>
-    #include <io.h>
+
     #define ftruncate _chsize_s
-    #define FS_PATH_MAX 32767   //with long path support enabled
+    //#define FS_PATH_MAX 32767   //with long path support enabled
+    #define FSI_PATH_MAX 260
+    #define FSI_NAME_MAX 255
+    #define FSI_PATH_DELIMITER_STR "\\"
 
     typedef struct {
         HANDLE dir;
         WIN32_FIND_DATAW data;  //current directory data
         char name[260 * 4];     //file name of WIN32_FIND_DATAW in UTF-8
         unsigned next;
-    } directory;
-
-    int fsi_os_directory_open(directory *d, const char *dirpath)
-    {
-        assert(d != NULL);
-        wchar_t path_buffer[1000];
-        int r = MultiByteToWideChar(CP_UTF8, 0, dirpath, -1, path_buffer, 1000 - 2);
-        if (r == 0)
-            return -1;
-        r--;    //because of last NULL counted
-        path_buffer[r++] = '\\';
-        path_buffer[r++] = '*';
-        path_buffer[r] = '\0';
-
-        HANDLE dir = FindFirstFileW(path_buffer, &d->data);
-        if (dir == INVALID_HANDLE_VALUE && GetLastError() != ERROR_FILE_NOT_FOUND)
-            return -1;
-
-        d->dir = dir;
-        return 0;
-    }
-
-    const char* fsi_os_directory_next(directory *d)
-    {
-        assert(d != NULL);
-        //on first iteration
-        if(!d->next) {
-            if(d->dir == INVALID_HANDLE_VALUE) {
-                SetLastError(ERROR_NO_MORE_FILES);
-			    return NULL;
-            }
-            d->next = 1;
-        } else {
-            if (!FindNextFileW(d->dir, &d->data)) {
-                return NULL;
-            }
-        }
-        if (0 == WideCharToMultiByte(CP_UTF8, 0, d->data.cFileName, -1, d->name, sizeof(d->name), NULL, NULL)) {
-            return NULL;
-        }
-        return d->name;
-    }
-
-    void fsi_os_directory_close(directory *d)
-    {
-        assert(d != NULL);
-        FindClose(d->dir);
-    }
-
+    } fsi_os_directory;
 #else
-    #include <sys/mman.h>
-    #include <unistd.h>
     #include <limits.h>
-    #define FS_PATH_MAX PATH_MAX
+    #include <dirent.h>
+    #include <sys/types.h>
+
+    #define FSI_PATH_MAX PATH_MAX
+    #define FSI_PATH_DELIMITER_STR "/"
+    #define FSI_NAME_MAX PATH_MAX
 
     typedef struct {
 	    DIR *dir;
-    } directory;
-
-    int fsi_os_directory_open(directory *d, const char *dirpath)
-    {
-        assert(d != NULL);
-        DIR *dir = opendir(dirpath);
-        if (dir == NULL)
-            return -1;
-        d->dir = dir;
-        return 0;
-    }
-
-    const char* fsi_os_directory_next(directory *d)
-    {
-        assert(d != NULL);
-        const struct dirent *di;
-        if (NULL == (di = readdir(d->dir)))
-            return NULL;
-        return di->d_name;
-    }
-
-    void fsi_os_directory_close(directory *d)
-    {
-        assert(d != NULL);
-        closedir(d->dir);
-        d->dir = NULL;
-    }
-
+        char name[FSI_PATH_MAX];
+    } fsi_os_directory;
 #endif
+
+typedef enum FSI_OS_FILE_TYPE {
+        FSI_OS_FILE = 1 << 0,
+        FSI_OS_DIR  = 1 << 1,
+        FSI_OS_LNK  = 1 << 2,
+        FSI_OS_UKN  = 1 << 3
+} FSI_OS_FILE_TYPE;
+
+typedef struct fsi_file_info {
+    char file_name[FSI_NAME_MAX];
+    char path[FSI_PATH_MAX];
+    FSI_OS_FILE_TYPE type;
+    uint64_t size;
+} fsi_file_info;
+
+int fsi_os_directory_open(fsi_os_directory *d, const char *dirpath);
+const int fsi_os_directory_next(fsi_os_directory *d, fsi_file_info* file_info);
+void fsi_os_directory_close(fsi_os_directory *d);
 
 #endif
