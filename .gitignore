@@ -1,5 +1,6 @@
 .vscode/
 build/
+cmake_commands.txt
 
 *.db
 *.exe

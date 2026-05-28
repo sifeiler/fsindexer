@@ -1,3 +1,5 @@
+#include <stdint.h>
+
 #include "../include/thr_thread.h"
 
 //
@@ -8,12 +10,8 @@
     #include <windows.h>
     #include <stdlib.h>
 
-    typedef HANDLE thr_t_thread;
-    typedef CRITICAL_SECTION thr_t_mutex;
-    typedef CONDITION_VARIABLE thr_t_cond;
-
     thr_t_thread* thr_allocate_thread() {
-        HANDLE *thread = (HANDLE*)malloc(sizeof(HANDLE));
+        thr_t_thread *thread = (thr_t_thread*)malloc(sizeof(thr_t_thread));
 
         if (thread == NULL) {
             return NULL;
@@ -22,7 +20,7 @@
     }
 
     int thr_thread_create(thr_t_thread* thread, void *func, void *func_args) {
-        *thread = CreateThread(
+        thread->thread = CreateThread(
             NULL,
             0,
             (LPTHREAD_START_ROUTINE)(func),
@@ -30,12 +28,12 @@
             0,
             NULL
         );
-        return *thread ? 0 : -1;
+        return thread->thread ? 0 : -1;
     }
 
     void thr_thread_join(thr_t_thread* thread) {
-        WaitForSingleObject(*thread, INFINITE);
-        CloseHandle(*thread);
+        WaitForSingleObject(thread->thread, INFINITE);
+        CloseHandle(thread->thread);
     }
 
     thr_t_mutex* thr_mtx_new() {
@@ -48,6 +46,10 @@
         return mutex;
     }
 
+    void thr_mtx_init(thr_t_mutex* mutex) {
+        InitializeCriticalSection(mutex);
+    }
+
     void thr_mtx_destroy(thr_t_mutex* mutex) {
         DeleteCriticalSection(mutex);
     }
@@ -58,6 +60,10 @@
 
     void thr_mtx_unlock(thr_t_mutex* mutex) {
         LeaveCriticalSection(mutex);
+    }
+
+    void thr_cond_init(thr_t_cond* cond) {
+        InitializeConditionVariable(cond);
     }
 
     void thr_cond_wait(thr_t_cond* cond, thr_t_mutex* mutex) {
@@ -74,6 +80,10 @@
     void thr_cond_notify_all(thr_t_cond* cond) {
         WakeAllConditionVariable(cond);
     }
+
+    uint64_t thr_get_id() {
+        return (uint64_t)GetCurrentThreadId();
+    }
     
 //
 // LINUX/POSIX thread implementation
@@ -81,13 +91,9 @@
 #else
     #include <pthread.h>
     #include <stdlib.h>
-    
-    typedef pthread_t thr_t_thread;
-    typedef pthread_mutex_t thr_t_mutex;
-    typedef pthread_cond_t thr_t_cond;
 
     thr_t_thread* thr_allocate_thread() {
-        pthread_t* thread = malloc(sizeof(pthread_t));
+        thr_t_thread* thread = malloc(sizeof(thr_t_thread));
 
         if(thread == NULL) {
             return NULL;
@@ -96,14 +102,14 @@
     }
 
     int thr_thread_create(thr_t_thread* thread, void *func, void *func_args) {
-        return pthread_create(thread,
+        return pthread_create(thread->thread,
                        NULL,
                        (void *(*)(void *))func,
                        func_args);
     }
 
     void thr_thread_join(thr_t_thread* thread) {
-        pthread_join(thread, NULL);
+        pthread_join(*thread->thread, NULL);
     }
 
     thr_t_mutex* thr_mtx_new() {
@@ -113,6 +119,10 @@
         }
         pthread_mutex_init(mutex, NULL);
         return mutex;
+    }
+
+    void thr_mtx_init(thr_t_mutex* mutex) {
+        pthread_mutex_init(mutex, NULL);
     }
 
     void thr_mtx_destroy(thr_t_mutex* mutex) {
@@ -126,6 +136,10 @@
 
     void thr_mtx_unlock(thr_t_mutex* mutex) {
         pthread_mutex_unlock(mutex);
+    }
+
+    void thr_cond_init(thr_t_cond* cond) {
+        pthread_cond_init(cond);
     }
 
     void thr_cond_wait(thr_t_cond* cond, thr_t_mutex* mutex) {
@@ -143,6 +157,10 @@
 
     void thr_cond_notify_all(thr_t_cond* cond) {
         pthread_cond_broadcast(cond);
+    }
+
+    uint64_t thr_get_id() {
+        return (uint64_t)pthread_self();
     }
 
 #endif

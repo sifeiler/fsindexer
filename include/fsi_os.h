@@ -44,6 +44,8 @@ typedef enum FSI_OS_FILE_TYPE {
 } FSI_OS_FILE_TYPE;
 
 typedef struct fsi_file_info {
+    uint64_t file_id;
+    uint8_t file_id_set;
     char file_name[FSI_NAME_MAX];
     char path[FSI_PATH_MAX];
     FSI_OS_FILE_TYPE type;
@@ -53,5 +55,6 @@ typedef struct fsi_file_info {
 int fsi_os_directory_open(fsi_os_directory *d, const char *dirpath);
 const int fsi_os_directory_next(fsi_os_directory *d, fsi_file_info* file_info);
 void fsi_os_directory_close(fsi_os_directory *d);
+int fsi_os_get_file_id(fsi_file_info* file_info);
 
 #endif

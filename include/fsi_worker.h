@@ -24,7 +24,7 @@ typedef struct fsi_t_wrk_worker {
 } fsi_t_wrk_worker;
 
 fsi_t_wrk_worker* fsi_wrk_create_worker(fsi_t_wrk_config* cfg);
-void fsi_wrk_start_worker(fsi_t_wrk_worker* worker);
+int fsi_wrk_start_worker(fsi_t_wrk_worker* worker);
 void fsi_wrk_stop_worker(fsi_t_wrk_worker* worker);
 
 #endif
