@@ -9,7 +9,7 @@
     int fsi_os_directory_open(fsi_os_directory *d, const char *dirpath)
     {
         assert(d != NULL);
-        wchar_t path_buffer[1000];
+        wchar_t path_buffer[1000] = {0};
         int r = MultiByteToWideChar(CP_UTF8, 0, dirpath, -1, path_buffer, FSI_PATH_MAX - 2);
         if (r == 0)
             return -1;
@@ -48,14 +48,14 @@
         }
 
         //load utf8 filename to filename buffer
-        char filename[FSI_PATH_MAX];
+        char filename[FSI_PATH_MAX] = {0};
         if (0 == WideCharToMultiByte(CP_UTF8, 0, d->data.cFileName, -1, filename, sizeof(filename), NULL, NULL)) {
             fsi_utils_report_error("Err during filename UTF8 conversion.");
             return -1;
         }
 
         //load utf8 filepath to full_path buffer
-        char full_path[FSI_PATH_MAX];
+        char full_path[FSI_PATH_MAX] ={0};
         int len = snprintf(full_path, sizeof(full_path), "%s%s%s", d->name, FSI_PATH_DELIMITER_STR, filename);
         if (len >= sizeof(full_path)) {
             fsi_utils_report_error("Warning: Path truncated for %s %s\n", d->name, filename);

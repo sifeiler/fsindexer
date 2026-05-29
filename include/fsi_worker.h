@@ -16,7 +16,10 @@ typedef struct fsi_t_wrk_context {
     fsi_t_queue* file_queue;
     fsi_t_queue* storage_queue;
     thr_t_thread* threads;
-    size_t thread_count;    
+    thr_t_mutex lock;
+    size_t thread_count;
+    int threads_done_count;
+    int threads_all_done;
 } fsi_t_wrk_context;
 
 typedef struct fsi_t_wrk_worker {
@@ -26,5 +29,7 @@ typedef struct fsi_t_wrk_worker {
 fsi_t_wrk_worker* fsi_wrk_create_worker(fsi_t_wrk_config* cfg);
 int fsi_wrk_start_worker(fsi_t_wrk_worker* worker);
 void fsi_wrk_stop_worker(fsi_t_wrk_worker* worker);
+void fsi_wrk_join_worker(fsi_t_wrk_worker* worker);
+void fsi_wrk_destroy_worker(fsi_t_wrk_worker* worker);
 
 #endif

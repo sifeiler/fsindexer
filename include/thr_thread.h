@@ -32,6 +32,7 @@ typedef struct thr_t_thread_args {
 thr_t_thread* thr_allocate_thread();
 int thr_thread_create(thr_t_thread* thread, void *func, void *func_args);
 void thr_thread_join(thr_t_thread* thread);
+void thr_thread_destroy(thr_t_thread* thread);
 thr_t_mutex* thr_mtx_new();
 void thr_mtx_destroy(thr_t_mutex* mutex); 
 void thr_mtx_init(thr_t_mutex* mutex); 

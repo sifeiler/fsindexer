@@ -27,6 +27,8 @@ fsi_t_wrk_worker* fsi_wrk_create_worker(fsi_t_wrk_config* cfg) {
         return NULL;
     }
 
+    thr_mtx_init(&worker->context.lock);
+
     //create threads
     thr_t_thread* threads = malloc(cfg->parallelismn * sizeof(thr_t_thread));
     if(threads == NULL) {
@@ -36,6 +38,8 @@ fsi_t_wrk_worker* fsi_wrk_create_worker(fsi_t_wrk_config* cfg) {
     }
     worker->context.threads = threads;
     worker->context.thread_count = cfg->parallelismn;
+    worker->context.threads_all_done = 0;
+    worker->context.threads_done_count = 0;
     return worker;
 }
 
@@ -60,23 +64,36 @@ int fsi_wrk_start_worker(fsi_t_wrk_worker* worker) {
     return 0;
 }
 
+void fsi_wrk_set_thread_done(fsi_t_wrk_context* context) {
+    thr_mtx_lock(&context->lock);
+    context->threads_done_count++;
+    context->threads_all_done = (context->thread_count == context->threads_done_count);
+    thr_mtx_unlock(&context->lock);
+
+    if(context->threads_all_done) {
+        //signal indexer that worker will no longer add items to the queue
+        fsi_queue_shutdown(context->storage_queue);
+    }
+}
+
 void fsi_wrk_work_process(void* args) {
-    printf("Worker Thread %" PRId64 " running.\n", thr_get_id());
+    printf("Worker Thread %" PRId64 ": start\n", thr_get_id());
     thr_t_thread_args* thread_args = (thr_t_thread_args*)args;
     fsi_t_wrk_context* context = (fsi_t_wrk_context*)thread_args->context;
     thr_t_thread* thread = (thr_t_thread*)thread_args->thread;
     fsi_t_queue* file_queue = context->file_queue;
-    fsi_file_info file;
-    while(fsi_queue_pop(file_queue, &file)) {
-        //printf("Pop file [q=file]:  %s\n", file.path);
+    fsi_file_info file = {0};
+    while((fsi_queue_pop(file_queue, &file) == FSI_QUEUE_OK) && !thread->interrupted) {
         fsi_wrk_process_file(context, &file, thread);
     }
     free(thread_args);
+    fsi_wrk_set_thread_done(context);
+    printf("Worker Thread %" PRId64 ": finished\n", thr_get_id());
 }
 
 void fsi_wrk_process_file(fsi_t_wrk_context* context, fsi_file_info* file, thr_t_thread* thread) {
     //extract file information, create file item for permanent storage and push to storage queue
-    fsi_t_mos_file mos_file;
+    fsi_t_mos_file mos_file = {0};
 
     size_t file_name_len = strlen(file->file_name);
     size_t file_path_len = strlen(file->path);
@@ -98,11 +115,36 @@ void fsi_wrk_process_file(fsi_t_wrk_context* context, fsi_file_info* file, thr_t
     }
 
     mos_file.file_id = file->file_id;
-    //printf("Push file [q=storage]:  %s\n", mos_file.file_path.str);
-    //printf("Item size:  %zu\n", context->storage_queue->item_size);
     fsi_queue_push(context->storage_queue, &mos_file);
 }
 
-void fsi_wrk_stop_worker(fsi_t_wrk_worker* worker) {
+/**
+ * Join all worker threads.
+*/
+void fsi_wrk_join_worker(fsi_t_wrk_worker* worker) {
+    printf("Joining worker threads...");
+    for (size_t i = 0; i < worker->context.thread_count; i++) {
+        thr_thread_join(&worker->context.threads[i]);
+    }
+}
 
+void fsi_wrk_stop_worker(fsi_t_wrk_worker* worker) {
+    printf("Interrupting worker threads...");
+    for (size_t i = 0; i < worker->context.thread_count; i++) {
+        worker->context.threads[i].interrupted = 1;
+    }
+}
+
+/**
+ * Make sure that threads are no longer running.
+ * Call fsi_wrk_join_worker first, then fsi_wrk_stop_worker, and then this function.
+ */
+void fsi_wrk_destroy_worker(fsi_t_wrk_worker* worker) {
+    printf("Destroying worker threads...");
+
+    for (size_t i = 0; i < worker->context.thread_count; i++) {
+        thr_thread_destroy(&worker->context.threads[i]);
+    }
+
+    free(worker);
 }

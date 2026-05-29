@@ -9,6 +9,7 @@
 #include <stddef.h>
 
 #include "mos.h"
+#include "mos_qry.h"
 
 void fsi_idr_process_storage_queue(fsi_t_idr_indexer* indexer);
 
@@ -32,7 +33,7 @@ fsi_t_idr_indexer* fsi_create_indexer(fsi_t_idr_config* cfg) {
     }
 
     //TODO: change size to size of storage record struct
-    context->storage_queue = fsi_create_queue(50000, sizeof(fsi_t_mos_file));
+    context->storage_queue = fsi_queue_create(50000, sizeof(fsi_t_mos_file));
     if(context->storage_queue == NULL) {
         return NULL;
     }
@@ -42,6 +43,12 @@ fsi_t_idr_indexer* fsi_create_indexer(fsi_t_idr_config* cfg) {
     context->worker->context.file_queue = context->crawler->context.file_queue;
     context->worker->context.storage_queue = context->storage_queue;
 
+    mos_t_attr_info file_id_attr = {
+        .name = "file_id",
+        .type = MOS_ATTR_TYPE_UINT64,
+        .byte_size = 8,
+        .external_offset = offsetof(fsi_t_mos_file, file_id)
+    };
     mos_t_attr_info file_name_attr = {
         .name = "file_name",
         .type = MOS_ATTR_TYPE_STRING,
@@ -53,10 +60,11 @@ fsi_t_idr_indexer* fsi_create_indexer(fsi_t_idr_config* cfg) {
         .external_offset = offsetof(fsi_t_mos_file, file_path)
     };
 
-    mos_t_attr_info attributes[2];
-    attributes[0] = file_name_attr;
-    attributes[1] = file_path_attr;
-
+    mos_t_attr_info attributes[3];
+    attributes[0] = file_id_attr;
+    attributes[1] = file_name_attr;
+    attributes[2] = file_path_attr;
+    
     mos_t_idx file_name_idx = {
         .name = "idx_file_name",
         .type = MOS_IDX_HASH_MAP,
@@ -69,14 +77,19 @@ fsi_t_idr_indexer* fsi_create_indexer(fsi_t_idr_config* cfg) {
     mos_t_config mos_cfg = {
         .max_records = cfg->records_count,
         .storage_path = cfg->storage_path,
-        .attribute_count = 2,
+        .attribute_count = 3,
         .index_count = 1,
         .attributes = attributes,
-        .indexes = indexes,
+        .indexes = indexes
     };
 
-    indexer->context.storage = mos_create_storage(mos_cfg.storage_path, &mos_cfg);
+    mos_t_storage* storage = mos_create_storage(mos_cfg.storage_path, &mos_cfg);
+    if(storage == NULL) {
+        printf("Failed to create indexer. Cannot allocate storage.");
+        return NULL;
+    }
 
+    indexer->context.storage = storage;
     return indexer;
 }
 
@@ -88,15 +101,73 @@ void fsi_idr_start(fsi_t_idr_indexer* indexer, const char** root_paths, size_t p
 }
 
 void fsi_idr_process_storage_queue(fsi_t_idr_indexer* indexer) {
+    printf("Baseline indexing: start\n");
     fsi_t_mos_file file;
     uint64_t file_count = 0;
-    while(fsi_queue_pop(indexer->context.storage_queue, &file)) {
+    while(fsi_queue_pop(indexer->context.storage_queue, &file) == FSI_QUEUE_OK) {
         mos_storage_put(indexer->context.storage, file.file_id, &file);
         file_count++;
 
         if((file_count % 10000) == 0) {
             printf("[storage] Processed another 10000 files. %llu files processed\n", file_count);
         }
+    }
+    //wait for all threads to finish
+    fsi_cwl_join_crawler(indexer->context.crawler);
+    fsi_wrk_join_worker(indexer->context.worker);
+
+    printf("Baseline indexing: done\n");
+    printf("--------------------------------------------------------\n");
+
+    printf("Give me a filename and I will tell you its path:\n");
+    char filename[FSI_PATH_MAX] = {0};
+
+    char fmt[16];
+    snprintf(fmt, sizeof(fmt), "%%%ds", FSI_PATH_MAX - 1);
+    while (scanf(fmt, filename) == 1)
+    {
+        int filename_len = strlen(filename);
+        mos_t_qry_search_step filename_step = 
+        { 
+            .op = MOS_QRY_OP_EQ,
+            .attribute_query = 
+            { 
+                .attribute_name = "file_name", 
+                .value = 
+                { 
+                    .type = MOS_ATTR_TYPE_STRING, 
+                    .char_val = filename, 
+                    .byte_length = filename_len
+                }
+            } 
+        };
+
+        mos_t_qry query = {
+            .query = &filename_step
+        };
+    
+        const mos_t_qry_bmp* result = mos_storage_search(indexer->context.storage, &query);
+        uint64_t expected_ones = mos_qry_bmp_count_ones(result);
+
+        int64_t* row_ids_buffer = malloc(expected_ones * sizeof(int64_t));
+        if (!row_ids_buffer) {
+            printf("Cannot allocate row_ids_buffer.\n");
+            continue;
+        }
+
+        uint64_t actual_ones = mos_qry_bmp_get_row_ids(result, row_ids_buffer);
+        if(expected_ones != actual_ones) {
+            printf("Result bitmap missmatch. Expected %" PRIu64 ", was %" PRIu64 "\n", expected_ones, actual_ones);
+            continue;
+        }
+
+        for (size_t i = 0; i < actual_ones; i++) {
+            int64_t row_id = row_ids_buffer[i];
+            fsi_t_mos_file* file = (fsi_t_mos_file*)mos_storage_get_data_for_row_id(indexer->context.storage, row_id);
+            printf("%.*s\n", file->file_path.str_len, file->file_path.str);
+        }
+        free(row_ids_buffer);
+        memset(filename, 0, FSI_PATH_MAX);
     }
 }
 

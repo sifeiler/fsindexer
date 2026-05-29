@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 project(FileSystemIndexer C)
+set(CMAKE_BUILD_TYPE Debug)
 
 # ── indexer executable ───────────────────────────────────────────────────
 file(GLOB APP_SRCS src/*.c)

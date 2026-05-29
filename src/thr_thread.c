@@ -36,6 +36,11 @@
         CloseHandle(thread->thread);
     }
 
+    void thr_thread_destroy(thr_t_thread* thread) {
+        CloseHandle(thread->thread);
+        free(thread);
+    }
+
     thr_t_mutex* thr_mtx_new() {
         CRITICAL_SECTION* mutex = (CRITICAL_SECTION*)malloc(sizeof(CRITICAL_SECTION));
 
@@ -110,6 +115,13 @@
 
     void thr_thread_join(thr_t_thread* thread) {
         pthread_join(*thread->thread, NULL);
+    }
+
+    void thr_thread_destroy(thr_t_thread* thread) {
+        if(thread->thread != NULL) {
+            free(thread->thread)
+        }
+        free(thread);
     }
 
     thr_t_mutex* thr_mtx_new() {
