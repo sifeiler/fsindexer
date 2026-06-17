@@ -48,7 +48,7 @@ fsi_t_cwl_crawler* fsi_cwl_create_crawler(fsi_t_cwl_config* cfg) {
     context->threads_done_count = 0;
     
     //create threads
-    thr_t_thread* threads = malloc(cfg->parallelismn * sizeof(thr_t_thread));
+    thr_t_thread* threads = malloc((cfg->parallelismn * sizeof(thr_t_thread)) + (cfg->parallelismn * sizeof(thr_thread_size_internal())));
     if(threads == NULL) {
         fsi_utils_report_error("Cannot create crawler. Threads could not be allocated.");
         free(dir_queue);

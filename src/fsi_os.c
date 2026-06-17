@@ -162,7 +162,7 @@
 
     int fsi_os_get_file_id(fsi_file_info* file_info) {
         struct stat st;
-        if(stat(path, &st) != 0) return -1;
+        if(stat(file_info->path, &st) != 0) return -1;
         file_info->file_id = (uint64_t)st.st_ino;
         return 0;
     }

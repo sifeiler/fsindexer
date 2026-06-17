@@ -30,6 +30,7 @@ typedef struct thr_t_thread_args {
 } thr_t_thread_args;
 
 thr_t_thread* thr_allocate_thread();
+size_t thr_thread_size_internal();
 int thr_thread_create(thr_t_thread* thread, void *func, void *func_args);
 void thr_thread_join(thr_t_thread* thread);
 void thr_thread_destroy(thr_t_thread* thread);

@@ -19,6 +19,10 @@
         return thread;
     }
 
+    size_t thr_thread_size_internal() {
+        return 0;
+    }
+
     int thr_thread_create(thr_t_thread* thread, void *func, void *func_args) {
         thread->thread = CreateThread(
             NULL,
@@ -106,7 +110,12 @@
         return thread;
     }
 
+    size_t thr_thread_size_internal() {
+        return sizeof(pthread_t);
+    }
+
     int thr_thread_create(thr_t_thread* thread, void *func, void *func_args) {
+        thread->thread = thr_allocate_thread();
         return pthread_create(thread->thread,
                        NULL,
                        (void *(*)(void *))func,

@@ -102,7 +102,7 @@ void fsi_idr_start(fsi_t_idr_indexer* indexer, const char** root_paths, size_t p
 
 void fsi_idr_process_storage_queue(fsi_t_idr_indexer* indexer) {
     printf("Baseline indexing: start\n");
-    fsi_t_mos_file file;
+    fsi_t_mos_file file = {0};
     uint64_t file_count = 0;
     while(fsi_queue_pop(indexer->context.storage_queue, &file) == FSI_QUEUE_OK) {
         mos_storage_put(indexer->context.storage, file.file_id, &file);
