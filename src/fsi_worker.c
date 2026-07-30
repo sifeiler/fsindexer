@@ -8,7 +8,7 @@
 #include "../include/fsi_indexer.h"
 
 void fsi_wrk_work_process(void* args);
-void fsi_wrk_process_file(fsi_t_wrk_context* context, fsi_file_info* file, thr_t_thread* thread);
+void fsi_wrk_process_file(fsi_t_wrk_context* context, fsi_file_info* file);
 
 fsi_t_wrk_worker* fsi_wrk_create_worker(fsi_t_wrk_config* cfg) {
     if(cfg == NULL) {
@@ -76,46 +76,38 @@ void fsi_wrk_set_thread_done(fsi_t_wrk_context* context) {
     }
 }
 
+static void fsi_wrk_work_process_loop(fsi_t_wrk_context* context, fsi_t_queue_mode mode) {
+    fsi_file_info file = {0};
+    while(fsi_queue_pop(context->file_queue, &file, mode) == FSI_QUEUE_OK) {
+        fsi_wrk_process_file(context, &file);
+    }
+}
+
 void fsi_wrk_work_process(void* args) {
     printf("Worker Thread %" PRId64 ": start\n", thr_get_id());
     thr_t_thread_args* thread_args = (thr_t_thread_args*)args;
     fsi_t_wrk_context* context = (fsi_t_wrk_context*)thread_args->context;
     thr_t_thread* thread = (thr_t_thread*)thread_args->thread;
-    fsi_t_queue* file_queue = context->file_queue;
-    fsi_file_info file = {0};
-    while((fsi_queue_pop(file_queue, &file) == FSI_QUEUE_OK) && !thread->interrupted) {
-        fsi_wrk_process_file(context, &file, thread);
-    }
-    free(thread_args);
+    fsi_wrk_work_process_loop(context, FSI_QUEUE_BLOCKING);
+    free(args);
     fsi_wrk_set_thread_done(context);
     printf("Worker Thread %" PRId64 ": finished\n", thr_get_id());
 }
 
-void fsi_wrk_process_file(fsi_t_wrk_context* context, fsi_file_info* file, thr_t_thread* thread) {
-    //extract file information, create file item for permanent storage and push to storage queue
-    fsi_t_mos_file mos_file = {0};
-
-    size_t file_name_len = strlen(file->file_name);
-    size_t file_path_len = strlen(file->path);
-    char file_name_buf[file_name_len];
-    char file_path_buf[file_path_len];
-
-    strncpy(file_name_buf, file->file_name, file_name_len);
-    mos_file.file_name.str = file_name_buf;
-    mos_file.file_name.str_len = file_name_len;
-    strncpy(file_path_buf, file->path, file_path_len);
-    mos_file.file_path.str = file_path_buf;
-    mos_file.file_path.str_len = file_path_len;
-
+void fsi_wrk_process_file(fsi_t_wrk_context* context, fsi_file_info* file) {
     if(file->file_id_set == 0) {
-        if(fsi_os_get_file_id(file)) {
-            fsi_utils_report_error("Cannot read file_id for file %s. Cannot push file to storage queue. Skipping it.", file->path);
+        if(fsi_os_get_file_id(file) == -1) {
+            fsi_utils_report_error("Cannot read file_id for file %s. Cannot push file to storage queue. Skipping it.", file->file_path);
             return;
         }
     }
 
-    mos_file.file_id = file->file_id;
-    fsi_queue_push(context->storage_queue, &mos_file);
+    fsi_t_file_data file_data = {
+        .file_info = *file
+        //later, additional filedata like vectors etc. will be evaluated and put here
+    };
+
+    fsi_queue_push(context->storage_queue, &file_data);
 }
 
 /**
@@ -140,11 +132,13 @@ void fsi_wrk_stop_worker(fsi_t_wrk_worker* worker) {
  * Call fsi_wrk_join_worker first, then fsi_wrk_stop_worker, and then this function.
  */
 void fsi_wrk_destroy_worker(fsi_t_wrk_worker* worker) {
-    printf("Destroying worker threads...");
+    //printf("Destroying worker threads...");
 
     for (size_t i = 0; i < worker->context.thread_count; i++) {
         thr_thread_destroy(&worker->context.threads[i]);
     }
 
+    free(worker->context.threads);
+    thr_mtx_destroy(&worker->context.lock);
     free(worker);
 }

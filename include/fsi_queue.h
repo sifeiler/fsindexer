@@ -8,6 +8,11 @@
 #define FSI_QUEUE_SHUTDOWN -1
 #define FSI_QUEUE_OK        1
 
+typedef enum fsi_t_queue_mode {
+    FSI_QUEUE_BLOCKING,
+    FSI_QUEUE_NON_BLOCKING
+} fsi_t_queue_mode;
+
 typedef struct fsi_t_queue {
     uint8_t* items;
     size_t item_size;
@@ -22,7 +27,7 @@ typedef struct fsi_t_queue {
     thr_t_cond is_not_empty;
 } fsi_t_queue;
 
-int fsi_queue_pop(fsi_t_queue* q, void* dst_ptr);
+int fsi_queue_pop(fsi_t_queue* q, void* dst_ptr, fsi_t_queue_mode mode);
 int fsi_queue_push(fsi_t_queue* q, void* item);
 fsi_t_queue* fsi_queue_create(size_t item_count, size_t item_size);
 void fsi_queue_destroy(fsi_t_queue* queue);

@@ -11,11 +11,11 @@
  * 1  - item found
  * -1 - queue shutdown and no more items to pop
  */
-int fsi_queue_pop(fsi_t_queue* q, void* dst_ptr) {
+int fsi_queue_pop(fsi_t_queue* q, void* dst_ptr, fsi_t_queue_mode mode) {
     thr_mtx_lock(&q->lock);
     while(q->count == 0) {
         //when we are waiting for is_not_empty and the queue was shutdown, we can exit because no more queue items are expected
-        if(q->shutdown) {
+        if(q->shutdown || mode == FSI_QUEUE_NON_BLOCKING) {
             thr_mtx_unlock(&q->lock);
             return FSI_QUEUE_SHUTDOWN;
         }

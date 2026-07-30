@@ -5,6 +5,7 @@ typedef struct fsi_t_idr_config fsi_t_idr_config;
 typedef struct fsi_t_idr_context fsi_t_context;
 typedef struct fsi_t_idr_indexer fsi_t_idr_indexer;
 typedef struct fsi_t_mos_file fsi_t_mos_file;
+typedef struct fsi_t_file_data fsi_t_file_data;
 
 typedef struct fsi_t_queue fsi_t_queue;
 

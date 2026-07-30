@@ -32,7 +32,7 @@
 
     typedef struct {
 	    DIR *dir;
-        char name[FSI_PATH_MAX];
+        char path[FSI_PATH_MAX];
     } fsi_os_directory;
 #endif
 
@@ -47,7 +47,9 @@ typedef struct fsi_file_info {
     uint64_t file_id;
     uint8_t file_id_set;
     char file_name[FSI_NAME_MAX];
-    char path[FSI_PATH_MAX];
+    char file_path[FSI_PATH_MAX];
+    uint64_t file_name_len;
+    uint64_t file_path_len;
     FSI_OS_FILE_TYPE type;
     uint64_t size;
 } fsi_file_info;
@@ -56,5 +58,15 @@ int fsi_os_directory_open(fsi_os_directory *d, const char *dirpath);
 const int fsi_os_directory_next(fsi_os_directory *d, fsi_file_info* file_info);
 void fsi_os_directory_close(fsi_os_directory *d);
 int fsi_os_get_file_id(fsi_file_info* file_info);
+int fsi_os_directory_create(const char* path);
+int fsi_os_directory_delete(const char* path);
+int fsi_os_file_create(const char* path);
+int fsi_os_file_delete(const char* path);
+
+/**
+ * returns 0 if file exists, -1 if it doesn't
+ */
+int fsi_os_file_exists(const char* path);
+int fsi_os_full_path(const char* directory, char result[FSI_PATH_MAX]);
 
 #endif

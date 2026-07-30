@@ -5,7 +5,10 @@
 #include "fsi_types_fwd.h"
 #include <stddef.h>
 
+#include "fsi_os.h"
+
 #include "mos.h"
+#include "mos_string.h"
 
 typedef struct fsi_t_idr_config {
     fsi_t_cwl_config* crawler_cfg;
@@ -38,6 +41,10 @@ typedef struct fsi_t_mos_file {
     mos_t_string file_name;
     mos_t_string file_path;
 } fsi_t_mos_file;
+
+typedef struct fsi_t_file_data {
+    fsi_file_info file_info;
+} fsi_t_file_data;
 
 fsi_t_idr_indexer* fsi_create_indexer(fsi_t_idr_config* cfg);
 void fsi_idr_start(fsi_t_idr_indexer* indexer, const char** root_paths, size_t path_count);

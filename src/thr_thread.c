@@ -42,7 +42,6 @@
 
     void thr_thread_destroy(thr_t_thread* thread) {
         CloseHandle(thread->thread);
-        free(thread);
     }
 
     thr_t_mutex* thr_mtx_new() {
@@ -103,7 +102,6 @@
 
     thr_t_thread* thr_allocate_thread() {
         thr_t_thread* thread = malloc(sizeof(thr_t_thread));
-
         if(thread == NULL) {
             return NULL;
         }
@@ -115,22 +113,18 @@
     }
 
     int thr_thread_create(thr_t_thread* thread, void *func, void *func_args) {
-        thread->thread = thr_allocate_thread();
-        return pthread_create(thread->thread,
+        return pthread_create(&thread->thread,
                        NULL,
                        (void *(*)(void *))func,
                        func_args);
     }
 
     void thr_thread_join(thr_t_thread* thread) {
-        pthread_join(*thread->thread, NULL);
+        pthread_join(thread->thread, NULL);
     }
 
     void thr_thread_destroy(thr_t_thread* thread) {
-        if(thread->thread != NULL) {
-            free(thread->thread)
-        }
-        free(thread);
+        //cleanup
     }
 
     thr_t_mutex* thr_mtx_new() {
@@ -148,7 +142,6 @@
 
     void thr_mtx_destroy(thr_t_mutex* mutex) {
         pthread_mutex_destroy(mutex);
-        free(mutex);
     }
 
     void thr_mtx_lock(thr_t_mutex* mutex) {
@@ -160,7 +153,7 @@
     }
 
     void thr_cond_init(thr_t_cond* cond) {
-        pthread_cond_init(cond);
+        pthread_cond_init(cond, NULL);
     }
 
     void thr_cond_wait(thr_t_cond* cond, thr_t_mutex* mutex) {

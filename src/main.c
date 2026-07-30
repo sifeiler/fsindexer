@@ -15,7 +15,7 @@ int main (int argc, char** argv) {
     printf("Configuring indexer for parameters: \n");
     printf("storage file: %s \n", mos_path);
     printf("root dir: %s \n", rootdir_path);
-    printf("records_count: %llu \n", records_count);
+    printf("records_count: %" PRId64 "\n", records_count);
 
     fsi_t_cwl_config cwl_cfg = {
         .parallelismn = 4

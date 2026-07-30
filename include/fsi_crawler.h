@@ -26,7 +26,12 @@ typedef struct fsi_t_cwl_crawler {
 } fsi_t_cwl_crawler;
 
 fsi_t_cwl_crawler* fsi_cwl_create_crawler(fsi_t_cwl_config* cfg);
-int fsi_cwl_start_crawler(fsi_t_cwl_crawler* crawler, const char** root_paths, size_t path_count);
+
+void fsi_cwl_crawler_init(fsi_t_cwl_crawler* crawler, const char** root_paths, size_t path_count);
+
+/* Call fsi_cwl_crawler_init before you call this function. */
+int fsi_cwl_crawler_start(fsi_t_cwl_crawler* crawler);
+
 void fsi_cwl_stop_crawler(fsi_t_cwl_crawler* crawler);
 void fsi_cwl_join_crawler(fsi_t_cwl_crawler* crawler);
 void fsi_cwl_destroy_crawler(fsi_t_cwl_crawler* crawler);

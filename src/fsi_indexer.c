@@ -33,7 +33,7 @@ fsi_t_idr_indexer* fsi_create_indexer(fsi_t_idr_config* cfg) {
     }
 
     //TODO: change size to size of storage record struct
-    context->storage_queue = fsi_queue_create(50000, sizeof(fsi_t_mos_file));
+    context->storage_queue = fsi_queue_create(50000, sizeof(fsi_t_file_data));
     if(context->storage_queue == NULL) {
         return NULL;
     }
@@ -96,20 +96,33 @@ fsi_t_idr_indexer* fsi_create_indexer(fsi_t_idr_config* cfg) {
 void fsi_idr_start(fsi_t_idr_indexer* indexer, const char** root_paths, size_t path_count) {
     //queues are created, crawler and worker are waiting for each other, so order of starting should not matter
     fsi_wrk_start_worker(indexer->context.worker);
-    fsi_cwl_start_crawler(indexer->context.crawler, root_paths, path_count);
+    fsi_cwl_crawler_init(indexer->context.crawler, root_paths, path_count);
+    fsi_cwl_crawler_start(indexer->context.crawler);
     fsi_idr_process_storage_queue(indexer);
 }
 
 void fsi_idr_process_storage_queue(fsi_t_idr_indexer* indexer) {
     printf("Baseline indexing: start\n");
-    fsi_t_mos_file file = {0};
+    fsi_t_file_data file_data = {0};
     uint64_t file_count = 0;
-    while(fsi_queue_pop(indexer->context.storage_queue, &file) == FSI_QUEUE_OK) {
-        mos_storage_put(indexer->context.storage, file.file_id, &file);
+    while(fsi_queue_pop(indexer->context.storage_queue, &file_data, FSI_QUEUE_BLOCKING) == FSI_QUEUE_OK) {
+        fsi_t_mos_file mos_file = {
+            .file_id = file_data.file_info.file_id,
+            .file_name = {
+                .str = file_data.file_info.file_name,
+                .str_len = file_data.file_info.file_name_len
+            },
+            .file_path = {
+                .str = file_data.file_info.file_path,
+                .str_len = file_data.file_info.file_path_len
+            }
+        };
+
+        mos_storage_put(indexer->context.storage, mos_file.file_id, &mos_file);
         file_count++;
 
         if((file_count % 10000) == 0) {
-            printf("[storage] Processed another 10000 files. %llu files processed\n", file_count);
+            printf("[storage] Processed another 10000 files. %" PRIu64 " files processed\n", file_count);
         }
     }
     //wait for all threads to finish

@@ -7,8 +7,8 @@
 
 #define CWL_QUE_SIZE 50000
 
-void fsi_cwl_crawl_process(void* args);
-void fsi_cwl_process_dir(fsi_t_cwl_context* context, fsi_file_info* item, thr_t_thread* thread);
+void fsi_cwl_crawl_process(thr_t_thread_args* args);
+void fsi_cwl_process_dir(fsi_t_cwl_context* context, fsi_file_info* item, int* interrupted);
 
 fsi_t_cwl_crawler* fsi_cwl_create_crawler(fsi_t_cwl_config* cfg) {
     if(cfg == NULL) {
@@ -33,11 +33,16 @@ fsi_t_cwl_crawler* fsi_cwl_create_crawler(fsi_t_cwl_config* cfg) {
     //create queues
     fsi_t_queue* dir_queue = fsi_queue_create(CWL_QUE_SIZE, sizeof(fsi_file_info));
     if(dir_queue == NULL) {
+        free(crawler);
+        thr_mtx_destroy(&crawler->context.lock);
         return NULL;
     }
 
     fsi_t_queue* file_queue = fsi_queue_create(CWL_QUE_SIZE, sizeof(fsi_file_info));
     if(file_queue == NULL) {
+        free(crawler);
+        thr_mtx_destroy(&crawler->context.lock);
+        fsi_queue_destroy(dir_queue);
         return NULL;
     }
 
@@ -48,11 +53,12 @@ fsi_t_cwl_crawler* fsi_cwl_create_crawler(fsi_t_cwl_config* cfg) {
     context->threads_done_count = 0;
     
     //create threads
-    thr_t_thread* threads = malloc((cfg->parallelismn * sizeof(thr_t_thread)) + (cfg->parallelismn * sizeof(thr_thread_size_internal())));
+    thr_t_thread* threads = malloc(cfg->parallelismn * sizeof(thr_t_thread));
     if(threads == NULL) {
         fsi_utils_report_error("Cannot create crawler. Threads could not be allocated.");
-        free(dir_queue);
-        free(file_queue);
+        fsi_queue_destroy(dir_queue);
+        fsi_queue_destroy(file_queue);
+        thr_mtx_destroy(&crawler->context.lock);
         free(crawler);
         return NULL;
     }
@@ -61,20 +67,37 @@ fsi_t_cwl_crawler* fsi_cwl_create_crawler(fsi_t_cwl_config* cfg) {
     return crawler;
 }
 
-int fsi_cwl_start_crawler(fsi_t_cwl_crawler* crawler, const char** root_paths, size_t path_count) {
+void fsi_cwl_crawler_init(fsi_t_cwl_crawler* crawler, const char** root_paths, size_t path_count) {
+    fsi_t_cwl_context* context = &crawler->context;
+
+    for (size_t i = 0; i < path_count; i++) {
+        fsi_file_info file_info = {0};
+        size_t root_path_len = strlen(root_paths[i]);
+        size_t len = snprintf(file_info.file_path, sizeof(file_info.file_path), "%s", root_paths[i]);
+
+        if(len < 0) {
+            fsi_utils_report_error("Error: Cannot write path to buffer. Skipping path %s on crawler init.\n", root_paths[i]);
+            continue;
+        }
+
+        if(len >= sizeof(file_info.file_path)) {
+            fsi_utils_report_error("Error: Path too long. Skipping path %s on crawler init.\n", root_paths[i]);
+            continue;
+        }
+
+        file_info.file_path_len = len;
+        //item on stack is copied to queue
+        fsi_queue_push(context->dir_queue, &file_info);
+    }
+}
+
+int fsi_cwl_crawler_start(fsi_t_cwl_crawler* crawler) {
     if(crawler == NULL) {
         fsi_utils_report_error("crawler is null. Cannot start crawling.");
         return -1;
     }
 
     fsi_t_cwl_context* context = &crawler->context;
-
-    for (size_t i = 0; i < path_count; i++) {
-        fsi_file_info file_info = {0};
-        strncpy(file_info.path, root_paths[i], FSI_PATH_MAX - 1);
-        //item on stack is copied to queue
-        fsi_queue_push(context->dir_queue, &file_info);
-    }
 
     for (size_t i = 0; i < context->thread_count; i++) {
         thr_t_thread_args* args = malloc(sizeof(thr_t_thread_args));
@@ -103,31 +126,34 @@ void fsi_cwl_set_thread_done(fsi_t_cwl_context* context) {
     }
 }
 
-void fsi_cwl_crawl_process(void* args) {
-    printf("Crawler Thread %" PRId64 ": start\n", thr_get_id());
-    thr_t_thread_args* thread_args = (thr_t_thread_args*)args;
-    fsi_t_cwl_context* context = (fsi_t_cwl_context*)thread_args->context;
-    thr_t_thread* thread = (thr_t_thread*)thread_args->thread;
+static void fsi_cwl_crawl_process_loop(fsi_t_cwl_context* context, int* interrupted, fsi_t_queue_mode mode) {
     fsi_file_info item = {0};
-    while(fsi_queue_pop(context->dir_queue, &item) == FSI_QUEUE_OK) {
-        fsi_cwl_process_dir(context, &item, thread);
+    while(fsi_queue_pop(context->dir_queue, &item, mode) == FSI_QUEUE_OK) {
+        fsi_cwl_process_dir(context, &item, interrupted);
         fsi_queue_item_done_try_shutdown(context->dir_queue);
     }
-    free(thread_args);
+}
+
+void fsi_cwl_crawl_process(thr_t_thread_args* args) {
+    printf("Crawler Thread %" PRId64 ": start\n", thr_get_id());
+    fsi_t_cwl_context* context = (fsi_t_cwl_context*)args->context;
+    thr_t_thread* thread = (thr_t_thread*)args->thread;
+    fsi_cwl_crawl_process_loop(context, &thread->interrupted, FSI_QUEUE_BLOCKING);
+    free(args);
     fsi_cwl_set_thread_done(context);
     printf("Crawler Thread %" PRId64 ": finished\n", thr_get_id());
 }
 
-void fsi_cwl_process_dir(fsi_t_cwl_context* context, fsi_file_info* item, thr_t_thread* thread) {
+void fsi_cwl_process_dir(fsi_t_cwl_context* context, fsi_file_info* item, int* interrupted) {
     fsi_os_directory dir = {0};
 
-    if(fsi_os_directory_open(&dir, item->path) != 0) {
-        fsi_utils_report_error("Cannot open directory %s", item->path);
+    if(fsi_os_directory_open(&dir, item->file_path) != 0) {
+        fsi_utils_report_error("Cannot open directory %s", item->file_path);
         return;
     }
 
     fsi_file_info file_info = {0};
-    while((fsi_os_directory_next(&dir, &file_info) == 0) && !thread->interrupted) {
+    while((fsi_os_directory_next(&dir, &file_info) == 0) && !(*interrupted)) {
         // Skip the "." and ".." items to avoid infinite loops
         if (strcmp(file_info.file_name, ".") == 0 || strcmp(file_info.file_name, "..") == 0) {
             continue;
@@ -138,6 +164,8 @@ void fsi_cwl_process_dir(fsi_t_cwl_context* context, fsi_file_info* item, thr_t_
             fsi_queue_push(context->file_queue, &file_info);
         }
     }
+    fsi_os_directory_close(&dir);
+    free(dir.dir);
 }
 
 /**
@@ -162,7 +190,7 @@ void fsi_cwl_stop_crawler(fsi_t_cwl_crawler* crawler) {
  * Call fsi_cwl_join_crawler first, then fsi_cwl_stop_crawler, and then this function.
  */
 void fsi_cwl_destroy_crawler(fsi_t_cwl_crawler* crawler) {
-    printf("Destroying crawler threads...\n");
+    //printf("Destroying crawler threads...\n");
     
     fsi_queue_destroy(crawler->context.dir_queue);
     fsi_queue_destroy(crawler->context.file_queue);
@@ -171,5 +199,7 @@ void fsi_cwl_destroy_crawler(fsi_t_cwl_crawler* crawler) {
         thr_thread_destroy(&crawler->context.threads[i]);
     }
 
+    free(crawler->context.threads);
+    thr_mtx_destroy(&crawler->context.lock);
     free(crawler);
 }

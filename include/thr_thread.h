@@ -17,7 +17,7 @@
     #include <pthread.h>
 
     typedef struct thr_t_thread {
-        pthread_t* thread;
+        pthread_t thread;
         int interrupted;
     } thr_t_thread;
     typedef pthread_mutex_t thr_t_mutex;
