@@ -1,5 +1,9 @@
 ## Building the indexer
-`git submodule update --init --recursive`
+For the indexer to work, one has to clone the MemObjStorage library first.
+Make sure to clone it into the same directory as the indexer.
+https://github.com/sifeiler/MemObjStorage
+
+After that, run `build_debug.sh` or `build_release.sh`
 
 ## Running tests
 
