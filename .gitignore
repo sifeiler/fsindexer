@@ -1,6 +1,11 @@
 .vscode/
+.VSCodeCounter/
 build/
+build-release/
 cmake_commands.txt
 
 *.db
 *.exe
+*.gguf
+*.bin
+third_party/clip.cpp/

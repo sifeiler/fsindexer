@@ -1,14 +1,26 @@
 #include <stddef.h>
 #include <string.h>
+#include <stdbool.h>
+#include <stdio.h>
 
 #include "../include/thr_thread.h"
 #include "../include/fsi_worker.h"
 #include "../include/fsi_queue.h"
 #include "../include/fsi_utils.h"
 #include "../include/fsi_indexer.h"
+#include "../include/fsi_clip.h"
 
 void fsi_wrk_work_process(void* args);
 void fsi_wrk_process_file(fsi_t_wrk_context* context, fsi_file_info* file);
+
+static bool fsi_utils_is_image_file(const fsi_file_info* file) {
+    char* ext = file->file_extension;
+    return (strcmp(ext, "jpg")  == 0 ||
+            strcmp(ext, "jpeg") == 0 ||
+            strcmp(ext, "png")  == 0 ||
+            strcmp(ext, "bmp")  == 0 ||
+            strcmp(ext, "tga")  == 0);
+}
 
 fsi_t_wrk_worker* fsi_wrk_create_worker(fsi_t_wrk_config* cfg) {
     if(cfg == NULL) {
@@ -49,8 +61,8 @@ int fsi_wrk_start_worker(fsi_t_wrk_worker* worker) {
         return -1;
     }
 
+    fsi_clip_global_init();
     fsi_t_wrk_context* context = &worker->context;
-
     for (size_t i = 0; i < context->thread_count; i++) {
         thr_t_thread_args* args = malloc(sizeof(thr_t_thread_args));
         args->thread = &context->threads[i];
@@ -87,8 +99,13 @@ void fsi_wrk_work_process(void* args) {
     printf("Worker Thread %" PRId64 ": start\n", thr_get_id());
     thr_t_thread_args* thread_args = (thr_t_thread_args*)args;
     fsi_t_wrk_context* context = (fsi_t_wrk_context*)thread_args->context;
+
+    const char *model_path = FSI_MODEL_DIR "/clip-vit-base-patch32.gguf";
+    fsi_clip_context_load(model_path, &context->clip_ctx);
+
     thr_t_thread* thread = (thr_t_thread*)thread_args->thread;
     fsi_wrk_work_process_loop(context, FSI_QUEUE_BLOCKING);
+    fsi_clip_context_free(context->clip_ctx);
     free(args);
     fsi_wrk_set_thread_done(context);
     printf("Worker Thread %" PRId64 ": finished\n", thr_get_id());
@@ -100,6 +117,18 @@ void fsi_wrk_process_file(fsi_t_wrk_context* context, fsi_file_info* file) {
             fsi_utils_report_error("Cannot read file_id for file %s. Cannot push file to storage queue. Skipping it.", file->file_path);
             return;
         }
+    }
+
+    if(fsi_utils_is_image_file(file)) {
+        //file already has memory reserved for the vector
+        //TODO: do not hardcode dimension
+        fsi_clip_image_get_vector_f32(context->clip_ctx, file->file_path, file->vector, 512);
+
+        if(file->vector) {
+            printf("DEBUG FILE VECTOR: path='%s', val[0]=%f, val[1]=%f\n", 
+            file->file_path, file->vector[0], file->vector[1]);
+        }
+        
     }
 
     fsi_t_file_data file_data = {
@@ -138,6 +167,7 @@ void fsi_wrk_destroy_worker(fsi_t_wrk_worker* worker) {
         thr_thread_destroy(&worker->context.threads[i]);
     }
 
+    fsi_clip_global_shutdown();
     free(worker->context.threads);
     thr_mtx_destroy(&worker->context.lock);
     free(worker);

@@ -1,3 +1,6 @@
+## Building the indexer
+`git submodule update --init --recursive`
+
 ## Running tests
 
 Tests create temporary files under a scratch directory, resolved in this order:
@@ -9,3 +12,9 @@ For heavy fuzzing runs, set `FSI_TEST_ROOT` to a RAM disk:
 - Linux: already defaults to `/dev/shm`, no action needed
 - Windows: mount a RAM disk (e.g. via [ImDisk](https://sourceforge.net/projects/imdisk-toolkit/)) 
   and set `FSI_TEST_ROOT=R:\fsi_test`
+
+## Third-Party Libraries
+* [stb_image](https://github.com/nothings/stb) - Public Domain / MIT
+* [clip.cpp](https://github.com/monatis/clip.cpp) - MIT License
+
+Thanks to all the contributors of the libraries used in this project.

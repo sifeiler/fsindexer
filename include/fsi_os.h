@@ -48,10 +48,12 @@ typedef struct fsi_file_info {
     uint8_t file_id_set;
     char file_name[FSI_NAME_MAX];
     char file_path[FSI_PATH_MAX];
+    char file_extension[FSI_NAME_MAX];
     uint64_t file_name_len;
     uint64_t file_path_len;
     FSI_OS_FILE_TYPE type;
     uint64_t size;
+    float vector[FSI_VECTOR_MAX_DIM];
 } fsi_file_info;
 
 int fsi_os_directory_open(fsi_os_directory *d, const char *dirpath);

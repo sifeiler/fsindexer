@@ -7,6 +7,7 @@
 #include <inttypes.h>
 #include "fsi_queue.h"
 #include <stddef.h>
+#include "fsi_clip.h"
 
 typedef struct fsi_t_wrk_config {
     uint64_t parallelismn;
@@ -20,6 +21,7 @@ typedef struct fsi_t_wrk_context {
     size_t thread_count;
     int threads_done_count;
     int threads_all_done;
+    struct clip_ctx* clip_ctx;
 } fsi_t_wrk_context;
 
 typedef struct fsi_t_wrk_worker {

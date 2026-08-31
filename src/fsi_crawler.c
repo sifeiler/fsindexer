@@ -4,6 +4,8 @@
 #include "../include/fsi_utils.h"
 
 #include <stddef.h>
+#include <string.h>
+#include <ctype.h>
 
 #define CWL_QUE_SIZE 50000
 
@@ -28,17 +30,18 @@ fsi_t_cwl_crawler* fsi_cwl_create_crawler(fsi_t_cwl_config* cfg) {
     }
 
     thr_mtx_init(&crawler->context.lock);
+    uint64_t fsi_file_info_size = sizeof(fsi_file_info);
 
     fsi_t_cwl_context* context = &crawler->context;
     //create queues
-    fsi_t_queue* dir_queue = fsi_queue_create(CWL_QUE_SIZE, sizeof(fsi_file_info));
+    fsi_t_queue* dir_queue = fsi_queue_create(CWL_QUE_SIZE, fsi_file_info_size);
     if(dir_queue == NULL) {
         free(crawler);
         thr_mtx_destroy(&crawler->context.lock);
         return NULL;
     }
 
-    fsi_t_queue* file_queue = fsi_queue_create(CWL_QUE_SIZE, sizeof(fsi_file_info));
+    fsi_t_queue* file_queue = fsi_queue_create(CWL_QUE_SIZE, fsi_file_info_size);
     if(file_queue == NULL) {
         free(crawler);
         thr_mtx_destroy(&crawler->context.lock);
@@ -144,6 +147,29 @@ void fsi_cwl_crawl_process(thr_t_thread_args* args) {
     printf("Crawler Thread %" PRId64 ": finished\n", thr_get_id());
 }
 
+const char* get_filename_ext(const char *filename) {
+    const char *dot = strrchr(filename, '.');
+    if (!dot || dot == filename || *(dot + 1) == '\0') {
+        return NULL;
+    }
+    return dot + 1;
+}
+
+void fsi_cwl_set_field_file_extension(fsi_file_info* file) {
+    char* file_ext = get_filename_ext(file->file_name);
+    if(!file_ext) {
+        return;
+    }
+    size_t file_ext_len = strlen(file_ext);
+
+    char lower_ext[file_ext_len];
+    for (int i = 0; file_ext[i] && i < file_ext_len; i++) {
+        lower_ext[i] = (char)tolower((unsigned char)file_ext[i]);
+    }
+
+    memcpy(file->file_extension, lower_ext, file_ext_len);
+}
+
 void fsi_cwl_process_dir(fsi_t_cwl_context* context, fsi_file_info* item, int* interrupted) {
     fsi_os_directory dir = {0};
 
@@ -158,6 +184,9 @@ void fsi_cwl_process_dir(fsi_t_cwl_context* context, fsi_file_info* item, int* i
         if (strcmp(file_info.file_name, ".") == 0 || strcmp(file_info.file_name, "..") == 0) {
             continue;
         }
+
+        fsi_cwl_set_field_file_extension(&file_info);
+
         if(file_info.type & FSI_OS_DIR) {
             fsi_queue_push(context->dir_queue, &file_info);
         } else if(file_info.type & FSI_OS_FILE) {

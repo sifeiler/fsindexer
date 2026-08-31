@@ -9,6 +9,7 @@
 
 #include "mos.h"
 #include "mos_string.h"
+#include "mos_qry.h"
 
 typedef struct fsi_t_idr_config {
     fsi_t_cwl_config* crawler_cfg;
@@ -34,12 +35,14 @@ typedef struct fsi_t_idr_indexer {
 // file_id      8 bytes
 // file_name   12 bytes for the string descriptor (actual string is stored in silo)
 // file_path   12 bytes for the string descriptor (actual string is stored in silo)
+// vector       8 bytes for the node_id of the vector index. Vector is not directly stored with records.
 //             --------
-//             24 bytes in total
+//             40 bytes in total + padding
 typedef struct fsi_t_mos_file {
     uint64_t file_id;
     mos_t_string file_name;
     mos_t_string file_path;
+    mos_t_float_vector vector;
 } fsi_t_mos_file;
 
 typedef struct fsi_t_file_data {

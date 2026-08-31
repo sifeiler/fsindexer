@@ -8,6 +8,8 @@
 #include <errno.h>
 #include <stdio.h>
 
+#define FSI_VECTOR_MAX_DIM 512
+
 static inline void fsi_utils_report_error(const char* input, ...) {
     va_list args;
     va_start(args, input);

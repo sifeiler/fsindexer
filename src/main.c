@@ -22,7 +22,7 @@ int main (int argc, char** argv) {
     };
 
     fsi_t_wrk_config wrk_cfg = {
-        .parallelismn = 4
+        .parallelismn = 1
     };
 
     fsi_t_idr_config idr_cfg = {
