@@ -124,11 +124,8 @@ void fsi_wrk_process_file(fsi_t_wrk_context* context, fsi_file_info* file) {
         //TODO: do not hardcode dimension
         fsi_clip_image_get_vector_f32(context->clip_ctx, file->file_path, file->vector, 512);
 
-        if(file->vector) {
-            printf("DEBUG FILE VECTOR: path='%s', val[0]=%f, val[1]=%f\n", 
-            file->file_path, file->vector[0], file->vector[1]);
-        }
-        
+        printf("DEBUG FILE VECTOR: path='%s', val[0]=%f, val[1]=%f\n", 
+        file->file_path, file->vector[0], file->vector[1]);
     }
 
     fsi_t_file_data file_data = {

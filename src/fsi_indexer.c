@@ -13,10 +13,11 @@
 #include "mos.h"
 #include "mos_qry.h"
 #include "mos_math.h"
+#include "mos_internal.h"
 
 void fsi_idr_process_storage_queue(fsi_t_idr_indexer* indexer);
 
-fsi_t_idr_indexer* fsi_create_indexer(fsi_t_idr_config* cfg) {
+fsi_t_idr_indexer* fsi_idr_create(fsi_t_idr_config* cfg) {
     if(cfg == NULL) {
         fsi_utils_report_error("indexer config is null. Cannot create crawler.");
         return NULL;
@@ -123,6 +124,11 @@ fsi_t_idr_indexer* fsi_create_indexer(fsi_t_idr_config* cfg) {
     }
 
     indexer->context.storage = storage;
+
+    const char *model_path = FSI_MODEL_DIR "/clip-vit-base-patch32.gguf";
+    fsi_clip_global_init();
+    fsi_clip_context_load(model_path, &indexer->context.clip_context);
+
     return indexer;
 }
 
@@ -172,12 +178,13 @@ void fsi_idr_process_storage_queue(fsi_t_idr_indexer* indexer) {
     fsi_cwl_join_crawler(indexer->context.crawler);
     fsi_wrk_join_worker(indexer->context.worker);
 
+    printf("Baseline indexing: done\n");
+    printf("--------------------------------------------------------\n");
+
+    /**
     struct clip_ctx* clip_context;
     const char *model_path = FSI_MODEL_DIR "/clip-vit-base-patch32.gguf";
     fsi_clip_context_load(model_path, &clip_context);
-
-    printf("Baseline indexing: done\n");
-    printf("--------------------------------------------------------\n");
 
     printf("=== Interactive Vector Search ===\n");
     printf("Usage:\n");
@@ -291,6 +298,155 @@ void fsi_idr_process_storage_queue(fsi_t_idr_indexer* indexer) {
         memset(input, 0, FSI_PATH_MAX);
     }
     fsi_clip_context_free(clip_context);
+    */
+}
+
+mos_t_qry_search_step* fsi_idr_fsi_to_mos_query(fsi_t_file_query* fsi_query, struct clip_ctx* clip_context) {
+    mos_t_qry_search_step* mos_query = calloc(1, sizeof(mos_t_qry_search_step));
+    if(mos_query == NULL) {
+        printf("Failed to allocate memory for mos_t_qry_search_step. Query parsing failed.");
+        return NULL;
+    }
+
+    MOS_QRY_OPERATOR mos_operator = fsi_to_mos_operator_mapping[fsi_query->operator];
+
+    if(fsi_query->operator == FSI_QRY_OP_OR || fsi_query->operator == FSI_QRY_OP_AND) {
+        size_t sub_query_count = fsi_query->data.logical.sub_query_count;
+        mos_t_qry_search_step** sub_steps = calloc(1, sub_query_count * sizeof(mos_t_qry_search_step*));
+        
+        if(sub_steps == NULL) {
+            printf("Failed to allocate memory for sub_steps. Query parsing failed.");
+            return NULL;
+        }
+
+        for(size_t i = 0; i < sub_query_count; i++) {
+            fsi_t_file_query* sub_query = fsi_query->data.logical.sub_queries[i];
+
+            if(sub_query == NULL) {
+                printf("Could not parse subquery. Query parsing failed.");
+                return NULL;
+            }
+
+            sub_steps[i] = fsi_idr_fsi_to_mos_query(sub_query, clip_context);
+        }
+
+        mos_query->sub_steps = sub_steps;
+        mos_query->step_count = sub_query_count;
+        mos_query->op = fsi_to_mos_operator_mapping[fsi_query->operator];
+        return mos_query;
+    }
+
+    if(fsi_query->operator == FSI_QRY_OP_NOT) {
+        mos_query->op = MOS_QRY_OP_NOT;
+        mos_query->step_count = 1;
+
+        mos_t_qry_search_step *sub_step = fsi_idr_fsi_to_mos_query(fsi_query->data.not.sub_query, clip_context);
+
+        mos_query->sub_steps = malloc(sizeof(mos_t_qry_search_step*));
+
+        if(mos_query->sub_steps == NULL) {
+            printf("Failed to allocate memory for sub_step. Query parsing failed.");
+            return NULL;
+        }
+
+        if (!mos_query->sub_steps) { /* handle allocation failure */ }
+        mos_query->sub_steps[0] = sub_step;
+
+        return mos_query;
+    }
+
+    fsi_t_attribute_query* attribute_query = &fsi_query->data.relational;
+
+    // at this point it's a relational query
+    // TODO: parse relational part
+    memcpy(mos_query->attribute_query.attribute_name, fsi_query->data.relational.attribute_name, fsi_query->data.relational.attribute_name_len);
+    mos_query->op = mos_operator;
+    mos_query->step_count = 0;
+
+    mos_t_attr_value* mos_attr_value = &mos_query->attribute_query.value;
+    
+    if(attribute_query->operator == FSI_QRY_OP_SIMILAR) {
+        fsi_t_qry_value_similar vector_query = attribute_query->value.vector_val;
+
+        if(attribute_query->value_type == VALUE_TYPE_IMAGE_BASE64) {
+            //image is part of char_val as a base64 representation
+            float vector[FSI_VECTOR_MAX_DIM];
+            // get configured vector dimension from mos, as the user can provide whatever number
+            fsi_clip_image_base64_get_vector_f32(clip_context, vector_query.char_val, strlen(vector_query.char_val), vector, vector_query.vector_dim);
+            mos_attr_value->byte_length = sizeof(float) * vector_query.vector_dim;
+            mos_attr_value->vector_val.vector_val = vector;
+            mos_attr_value->vector_val.vector_dim = vector_query.vector_dim;
+        }
+
+        mos_attr_value->type = MOS_ATTR_TYPE_VECTOR;
+        mos_attr_value->vector_val.ef = vector_query.ef;
+        mos_attr_value->vector_val.threshold = vector_query.threshold;
+        mos_attr_value->vector_val.top_k = vector_query.top_k;
+    }
+    
+    return mos_query;
+}
+
+uint64_t fsi_idr_query(fsi_t_idr_indexer* indexer, fsi_t_file_query* query, fsi_t_mos_file*** result_out) {
+    *result_out = NULL;
+
+    // map query to mos query
+    mos_t_qry_search_step* outer_qry_step = fsi_idr_fsi_to_mos_query(query, indexer->context.clip_context);
+
+    if(outer_qry_step == NULL) {
+        return 0;
+    }
+
+    mos_t_qry mos_qry = {
+        .query = outer_qry_step
+    };
+
+    const mos_t_qry_bmp* bmp = mos_storage_search(indexer->context.storage, &mos_qry);
+    uint64_t expected_ones = mos_qry_bmp_count_ones(bmp);
+
+    if (expected_ones == 0) {
+        return 0; // nothing found, *result_out stays NULL
+    }
+
+    int64_t* row_ids_buffer = malloc(expected_ones * sizeof(int64_t));
+    if (!row_ids_buffer) {
+        printf("Cannot allocate row_ids_buffer.\n");
+        return 0;
+    }
+
+    uint64_t actual_ones = mos_qry_bmp_get_row_ids(bmp, row_ids_buffer);
+    if (expected_ones != actual_ones) {
+        printf("Result bitmap mismatch. Expected %" PRIu64 ", was %" PRIu64 "\n", expected_ones, actual_ones);
+        free(row_ids_buffer);
+        return 0;
+    }
+
+    fsi_t_mos_file** files = malloc(actual_ones * sizeof(fsi_t_mos_file*));
+    if (!files) {
+        printf("Cannot allocate files array.\n");
+        free(row_ids_buffer);
+        return 0;
+    }
+
+    for (size_t i = 0; i < actual_ones; i++) {
+        int64_t row_id = row_ids_buffer[i];
+        files[i] = (fsi_t_mos_file*) mos_storage_get_data_for_row_id(indexer->context.storage, row_id);
+    }
+
+    free(row_ids_buffer);
+    *result_out = files;
+    return actual_ones;
+}
+
+void fsi_idr_free_query_result(fsi_t_mos_file** files, uint64_t count) {
+    if (!files) return;
+
+    for (uint64_t i = 0; i < count; i++) {
+        if (files[i]) {
+            free(files[i]);
+        }
+    }
+    free(files);
 }
 
 void fsi_idr_stop(fsi_t_idr_indexer* indexer) {

@@ -1,8 +1,8 @@
 .vscode/
 .VSCodeCounter/
-build/
-build-release/
+build-*/
 cmake_commands.txt
+Testing/
 
 *.db
 *.exe

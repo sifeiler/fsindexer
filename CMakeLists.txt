@@ -2,10 +2,14 @@ cmake_minimum_required(VERSION 3.10)
 
 set(CMAKE_C_COMPILER "clang")
 set(CMAKE_CXX_COMPILER "clang++")
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 project(FileSystemIndexer C CXX)
 
 include(CTest)
 enable_testing()
+
+# Build options
+option(BUILD_WEB_SERVER "Build with embedded Mongoose HTTP API and Vue Frontend" OFF)
 
 # Default to Debug only if the user didn't specify a build type on the command line
 if(NOT CMAKE_BUILD_TYPE)
@@ -15,16 +19,34 @@ message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 
 # ── Per-build-type compiler/sanitizer flags ─────────────────────────────────
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
-    add_compile_options(-O3 -march=native -mavx2 -mfma -DNDEBUG)
-    # no sanitizers, no -g, no -O0 in Release
+    add_compile_options(-O3 -march=native -mavx2 -mfma -DNDEBUG)    # no sanitizers, no -g, no -O0 in Release
+    set(IS_RELEASE_BUILD TRUE)
+    set(BUILD_WEB_SERVER OFF)
+    set(MOS_LIB_PATH "${CMAKE_SOURCE_DIR}/../MemObjStorage/build-release/libmos.a")
+elseif (CMAKE_BUILD_TYPE STREQUAL "Debug_Server")
+    add_compile_options(-g -O0 -march=native -mavx2 -mfma)
+    set(SAN_FLAGS "-fsanitize=address,undefined")
+
+    set(BUILD_WEB_SERVER ON)
+    set(IS_RELEASE_BUILD FALSE)
+    set(MOS_LIB_PATH "${CMAKE_SOURCE_DIR}/../MemObjStorage/build/libmos.a")
 else()
     add_compile_options(-g -O0 -march=native -mavx2 -mfma)
 
     set(SAN_FLAGS "-fsanitize=address,undefined")
     add_compile_options(${SAN_FLAGS})
     add_link_options(${SAN_FLAGS})
+
+    set(MOS_LIB_PATH "${CMAKE_SOURCE_DIR}/../MemObjStorage/build/libmos.a")
+    set(BUILD_WEB_SERVER OFF)
+    set(IS_RELEASE_BUILD FALSE)
 endif()
 
+if(NOT DEFINED IS_RELEASE_BUILD)
+  message(FATAL_ERROR "you need to set IS_RELEASE_BUILD")
+endif()
+
+# fetch clip
 include(FetchContent)
 FetchContent_Declare(
   clip_cpp
@@ -45,7 +67,8 @@ add_library(fsindexer STATIC
     src/thr_thread.c
     src/fsi_clip.c)
 target_include_directories(fsindexer PUBLIC 
-    src 
+    src     
+    third_party
     ${clip_cpp_SOURCE_DIR}
     ${clip_cpp_SOURCE_DIR}/ggml/include
 )
@@ -54,13 +77,7 @@ target_compile_definitions(fsindexer PRIVATE
     FSI_MODEL_DIR="${CMAKE_SOURCE_DIR}/models"
 )
 
-if(CMAKE_BUILD_TYPE STREQUAL "Release")
-    set(MOS_LIB_PATH "${CMAKE_SOURCE_DIR}/../MemObjStorage/build-release/libmos.a")
-else()
-    set(MOS_LIB_PATH "${CMAKE_SOURCE_DIR}/../MemObjStorage/build/libmos.a")
-endif()
-
-# ── Import the pre-built storage archive as an interface target ───────────────
+# Import the pre-built storage archive as an interface target
 add_library(mos_storage STATIC IMPORTED)
 set_target_properties(mos_storage PROPERTIES
     IMPORTED_LOCATION "${MOS_LIB_PATH}"
@@ -68,19 +85,59 @@ set_target_properties(mos_storage PROPERTIES
 )
 
 # Suppress function pointer runtime checks specifically on GGML to prevent false-positive UBsan traps
-if(NOT CMAKE_BUILD_TYPE STREQUAL "Release")
+if(NOT IS_RELEASE_BUILD)
     target_compile_options(ggml PRIVATE -fno-sanitize=undefined)
 endif()
 
 # Link fsindexer dependencies publicly so executables inherit them cleanly
 target_link_libraries(fsindexer PUBLIC clip ggml stdc++ mos_storage)
 
-# ── indexer executable ───────────────────────────────────────────────────
-add_executable(indexer src/main.c) 
-target_include_directories(indexer PRIVATE ${clip_cpp_SOURCE_DIR})
-target_link_libraries(indexer PRIVATE fsindexer)
+if(BUILD_WEB_SERVER)
+    message(STATUS "Building fsindexer with HTTP Server and Web UI")
 
-# ── Unity Testing ──────────────────────────────────────────────────────────
+    # mongoose static lib
+    add_library(mongoose STATIC third_party/mongoose/mongoose.c)
+    target_include_directories(mongoose PUBLIC third_party/mongoose)
+
+    # mongoose web executable
+    add_executable(indexer
+        src/main_server.c
+        src/server/fsi_server.c
+    )
+
+    add_library(cjson STATIC third_party/cJSON/cJSON.c)
+    target_include_directories(cjson PUBLIC third_party/cJSON)
+
+    add_library(libb64_cdecode STATIC third_party/b64/cdecode.c)
+    target_include_directories(libb64_cdecode PUBLIC third_party/b64)
+
+    # Add compile flag to C code if needed
+    target_compile_definitions(indexer PRIVATE ENABLE_WEB_SERVER)
+
+    # Link Core Engine + Web Server
+    target_link_libraries(indexer PRIVATE fsindexer mongoose cjson libb64_cdecode)
+
+    # OS-Specific Network Libraries (Windows requires ws2_32)
+    if(WIN32)
+        target_link_libraries(indexer PRIVATE ws2_32)
+    endif()
+
+    target_link_libraries(fsindexer PUBLIC mongoose cjson libb64_cdecode)
+
+    # (Optional) Automatic Web Frontend Embed Rule
+    # Reads compiled Vue dist/ files and creates header headers/arrays
+    # target_compile_definitions(indexer PRIVATE EMBED_VUE)
+else()
+    message(STATUS "Building fsindexer headless (CLI/Library only)")
+
+    add_executable(indexer src/main.c) 
+    target_link_libraries(indexer PRIVATE fsindexer)
+endif()
+
+# clip indexer executable
+target_include_directories(indexer PRIVATE ${clip_cpp_SOURCE_DIR})
+
+# Unity Testing
 add_library(unity STATIC tests/unity.c)
 target_include_directories(unity PUBLIC tests)
 
