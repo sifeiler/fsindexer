@@ -358,7 +358,6 @@ mos_t_qry_search_step* fsi_idr_fsi_to_mos_query(fsi_t_file_query* fsi_query, str
     fsi_t_attribute_query* attribute_query = &fsi_query->data.relational;
 
     // at this point it's a relational query
-    // TODO: parse relational part
     memcpy(mos_query->attribute_query.attribute_name, fsi_query->data.relational.attribute_name, fsi_query->data.relational.attribute_name_len);
     mos_query->op = mos_operator;
     mos_query->step_count = 0;
@@ -367,18 +366,26 @@ mos_t_qry_search_step* fsi_idr_fsi_to_mos_query(fsi_t_file_query* fsi_query, str
     
     if(attribute_query->operator == FSI_QRY_OP_SIMILAR) {
         fsi_t_qry_value_similar vector_query = attribute_query->value.vector_val;
+        size_t vector_size_bytes = sizeof(float) * vector_query.vector_dim;
+
+        float *vector_buf = malloc(vector_size_bytes);
+        if (vector_buf == NULL) {
+            return NULL; 
+        }
 
         if(attribute_query->value_type == VALUE_TYPE_IMAGE_BASE64) {
             //image is part of char_val as a base64 representation
-            float vector[FSI_VECTOR_MAX_DIM];
             // get configured vector dimension from mos, as the user can provide whatever number
-            fsi_clip_image_base64_get_vector_f32(clip_context, vector_query.char_val, strlen(vector_query.char_val), vector, vector_query.vector_dim);
-            mos_attr_value->byte_length = sizeof(float) * vector_query.vector_dim;
-            mos_attr_value->vector_val.vector_val = vector;
-            mos_attr_value->vector_val.vector_dim = vector_query.vector_dim;
+            fsi_clip_image_base64_get_vector_f32(clip_context, vector_query.char_val, strlen(vector_query.char_val), vector_buf, vector_query.vector_dim);
+        } else if(attribute_query->value_type == VALUE_TYPE_IMAGE_PATH) {
+            fsi_clip_image_get_vector_f32(clip_context, vector_query.char_val, vector_buf, vector_query.vector_dim);
         }
 
+        mos_attr_value->byte_length = sizeof(float) * vector_query.vector_dim;
         mos_attr_value->type = MOS_ATTR_TYPE_VECTOR;
+
+        mos_attr_value->vector_val.vector_val = vector_buf;
+        mos_attr_value->vector_val.vector_dim = vector_query.vector_dim;
         mos_attr_value->vector_val.ef = vector_query.ef;
         mos_attr_value->vector_val.threshold = vector_query.threshold;
         mos_attr_value->vector_val.top_k = vector_query.top_k;
