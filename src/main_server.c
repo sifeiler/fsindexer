@@ -1,5 +1,8 @@
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <arpa/inet.h>
 
 #include "mongoose.h"
 #include "../include/server/fsi_server.h"
@@ -273,32 +276,35 @@ int fsi_server_init(fsi_t_server_ctx* ctx_out) {
     return 0;
 }
 
-int main(int argc, char** argv) {
-    char* port;
-    if(argc < 2) {
-        printf("No port provided. Fallback to %s\n", DEFAULT_PORT);
-        port = DEFAULT_PORT;
-    } else {
-        port = argv[1];
-        printf("Using port %s from arguments.", port);
-    }
-    char* host = "http://localhost";
-    int url_len = strlen(host) + 1 + strlen(port) + 1;  // +1 port delimitter + 1 string terminator
-    char url[url_len];
-    snprintf(url, url_len, "%s:%s", host, port);
-
+int main() {
     fsi_t_server_ctx ctx = {0};
     int init_status = fsi_server_init(&ctx);
 
     if(init_status != 0) {
         printf("Server init failed!");
-        return -1;
+        return 1;
     }
 
     struct mg_mgr mgr;  // Mongoose event manager. Holds all connections
     mg_mgr_init(&mgr);  // Initialise event manager
     ctx.mgr = &mgr;
-    mg_http_listen(&mgr, url, ev_handler_dispatcher, &ctx);
+
+    // Pass port 0 directly to Mongoose on Loopback (127.0.0.1)
+    // Mongoose will let the OS pick a free port automatically.
+    struct mg_connection *c = mg_http_listen(&mgr, "http://127.0.0.1:0", ev_handler_dispatcher, &ctx);
+
+    if (c == NULL) {
+        fprintf(stderr, "Failed to create Mongoose listener\n");
+        return 1;
+    }
+
+    // Retrieve the actual OS-assigned port from Mongoose's listening connection socket
+    int port = ntohs(c->loc.port);
+
+    // Print "PORT:<port>" for Rust/Tauri to capture
+    printf("PORT:%d\n", port);
+    fflush(stdout); // Crucial: Flush immediately!
+
     for (;;) {
         mg_mgr_poll(&mgr, 1000);  // Infinite event loop
     }

@@ -24,7 +24,7 @@ MOS_QRY_OPERATOR fsi_server_get_query_operator(char* operator) {
 FSI_QRY_VALUE_TYPE fsi_server_get_value_type(cJSON* cjson) {
     if(strcmp(cjson->valuestring, "image_path") == 0) {
         return VALUE_TYPE_IMAGE_PATH;
-    } else if(strcmp(cjson->valuestring, "image_promt") == 0) {
+    } else if(strcmp(cjson->valuestring, "image_prompt") == 0) {
         return VALUE_TYPE_IMAGE_PROMPT;
     } else if(strcmp(cjson->valuestring, "image_base64") == 0) {
         return VALUE_TYPE_IMAGE_BASE64;
@@ -45,13 +45,13 @@ FSI_QRY_VALUE_TYPE fsi_server_get_value_type(cJSON* cjson) {
  *  "OR": [
  *      {
  *          "attribute_name": "file_name",
- *          "operation": "EQ",
+ *          "operator": "EQ",
  *          "value_type": "text",
  *          "value": "file1"
  *      },
  *      {
  *          "attribute_name": "vector",
- *          "operation": "SIMILAR",
+ *          "operator": "SIMILAR",
  *          "value_type": "image_path",
  *          "value": {
  *              "image_path": "/path/to/image",
@@ -71,25 +71,34 @@ fsi_t_file_query* fsi_server_parse_file_query_json(cJSON* cjson) {
 
     fsi_t_file_query* query = calloc(1, sizeof(fsi_t_file_query));
     if(query == NULL) {
-        printf("Could not allocate memory for query. Query parsing failed.");
+        printf("Could not allocate memory for query. Query parsing failed.\n");
         return NULL;
     }
 
-    // parse logical queries
-    cJSON* and = cJSON_GetObjectItemCaseSensitive(cjson, "AND");
-    cJSON* or = cJSON_GetObjectItemCaseSensitive(cjson, "OR");
-    cJSON* not = cJSON_GetObjectItemCaseSensitive(cjson, "NOT");
+    cJSON* operator = cJSON_GetObjectItemCaseSensitive(cjson, "operator");
 
-    if(and || or) {
-        cJSON* logical = and ? and : or;
+    if(!operator) {
+        printf("Operator is missing. Query parsing failed.");
+        return NULL;
+    }
+
+    MOS_QRY_OPERATOR q_op = fsi_server_get_query_operator(operator->valuestring);
+
+    if(q_op == MOS_QRY_OP_OR || q_op == MOS_QRY_OP_AND) {
+        cJSON* sub_queries = cJSON_GetObjectItemCaseSensitive(cjson, "sub_queries");
         
-        if(!cJSON_IsArray(logical)) {
-            printf("Logical AND/OR query should be of type array. Query parsing failed.");
+        if(!sub_queries) {
+            printf("Query operator is logical, but sub_queries is missing. Query parsing failed.\n");
             return NULL;
         }
 
-        query->operator = and ? FSI_QRY_OP_AND : FSI_QRY_OP_OR;
-        size_t array_size = cJSON_GetArraySize(logical);
+        if(!cJSON_IsArray(sub_queries)) {
+            printf("Logical AND/OR query should be of type array. Query parsing failed.\n");
+            return NULL;
+        }
+
+        query->operator = q_op;
+        size_t array_size = cJSON_GetArraySize(sub_queries);
 
         if(array_size > 0) {
             //only allocate pointers. Real struct will be allocated in recursive call.
@@ -97,62 +106,41 @@ fsi_t_file_query* fsi_server_parse_file_query_json(cJSON* cjson) {
             query->data.logical.sub_query_count = array_size;
 
             for(int i = 0; i < array_size; i++) {
-                *(query->data.logical.sub_queries + i) = fsi_server_parse_file_query_json(cJSON_GetArrayItem(logical, i));
+                *(query->data.logical.sub_queries + i) = fsi_server_parse_file_query_json(cJSON_GetArrayItem(sub_queries, i));
             }
         }
         return query;
     }
 
-    if(not) {
-        query->operator = FSI_QRY_OP_NOT;
+    if(q_op == MOS_QRY_OP_NOT) {
+        query->operator = MOS_QRY_OP_NOT;
+        cJSON* sub_query = cJSON_GetObjectItemCaseSensitive(cjson, "sub_query");
 
-        if(!cJSON_IsObject(cjson)) {
-            printf("Logical NOT query should be of type object. Query parsing failed.");
+        if(!cJSON_IsObject(sub_query)) {
+            printf("Logical NOT query should be of type object. Query parsing failed.\n");
             return NULL;
         }
 
-        query->data.not.sub_query = fsi_server_parse_file_query_json(not);
+        query->data.not.sub_query = fsi_server_parse_file_query_json(sub_query);
         return query;
     }
 
     //at this point, we are parsing a relational query (EQ, SIMILAR, ...)
-    cJSON* operator = cJSON_GetObjectItemCaseSensitive(cjson, "operator");
     cJSON* attribute_name = cJSON_GetObjectItemCaseSensitive(cjson, "attribute_name");
-    cJSON* value_type = cJSON_GetObjectItemCaseSensitive(cjson, "value_type");
     cJSON* value = cJSON_GetObjectItemCaseSensitive(cjson, "value");
 
-    if(!operator) {
-        printf("Relational attribute-query misses field operator. Query parsing failed.");
-        return NULL;
-    }
-
     if(!attribute_name) {
-        printf("Relational attribute-query misses field attribute_name. Query parsing failed.");
-        return NULL;
-    }
-
-    if(!value_type) {
-        printf("Relational attribute-query misses field value_type. Query parsing failed.");
+        printf("Relational attribute-query misses field attribute_name. Query parsing failed.\n");
         return NULL;
     }
 
     if(!value) {
-        printf("Relational attribute-query misses field value. Query parsing failed.");
+        printf("Relational attribute-query misses field value. Query parsing failed.\n");
         return NULL;
     }
 
-    FSI_QRY_OPERATOR q_op;
-    if(strcmp(operator->valuestring, "EQ") == 0) {
-        q_op = FSI_QRY_OP_EQ;
-    } else if(strcmp(operator->valuestring, "SIMILAR") == 0) {
-        q_op = FSI_QRY_OP_SIMILAR;
-    } else {
-        printf("Query operator unknown. Query parsing failed.");
-        return NULL;
-    }
-
-    if((q_op & FSI_RELATIONAL_OP) == 0) {
-        printf("Query operator is not relational. Attribute queries require relational operators. Query parsing failed.");
+    if((q_op & MOS_QRY_RELATIONAL_OP) == 0) {
+        printf("Query operator is not relational. Attribute queries require relational operators. Query parsing failed.\n");
         return NULL;
     }
 
@@ -163,16 +151,27 @@ fsi_t_file_query* fsi_server_parse_file_query_json(cJSON* cjson) {
     attribute_query->attribute_name = strdup(attribute_name->valuestring);
     attribute_query->attribute_name_len = strlen(attribute_query->attribute_name);
 
+    cJSON* value_type = cJSON_GetObjectItemCaseSensitive(value, "value_type");
+
+    if(!value_type) {
+        printf("Relational attribute-query value property misses field value_type. Query parsing failed.\n");
+        return NULL;
+    }
+    printf("value_type %s\n", value_type->valuestring);
+
+    //this is the real value
+    cJSON* value_dot_value = cJSON_GetObjectItemCaseSensitive(value, "value");
+
     FSI_QRY_VALUE_TYPE fsi_value_type = fsi_server_get_value_type(value_type);
     if(fsi_value_type == VALUE_TYPE_UNKNOWN) {
-        printf("Value type unknown. Query parsing failed.");
+        printf("Value type unknown. Query parsing failed.\n");
         return NULL;
     }
     attribute_query->value_type = fsi_value_type;
 
-    if(cJSON_IsString(value)) {
-        attribute_query->value.char_val = strdup(value->valuestring);
-    } else if(q_op == FSI_QRY_OP_SIMILAR && cJSON_IsObject(value)) {
+    if(fsi_value_type == VALUE_TYPE_TEXT) {
+        attribute_query->value.char_val = strdup(value_dot_value->valuestring);
+    } else if(q_op == MOS_QRY_OP_SIMILAR) {
         fsi_t_qry_value_similar* vector_val = &attribute_query->value.vector_val;
 
         cJSON* ef = cJSON_GetObjectItemCaseSensitive(value, "ef");
@@ -180,7 +179,7 @@ fsi_t_file_query* fsi_server_parse_file_query_json(cJSON* cjson) {
         cJSON* threshold = cJSON_GetObjectItemCaseSensitive(value, "threshold");
 
         if(!ef || !top_k || !threshold) {
-            printf("One or more fields of 'ef', 'top_k' or 'threshold' is missing. Query parsing failed.");
+            printf("One or more fields of 'ef', 'top_k' or 'threshold' is missing. Query parsing failed.\n");
         }
 
         vector_val->ef = ef->valueint;
@@ -189,42 +188,26 @@ fsi_t_file_query* fsi_server_parse_file_query_json(cJSON* cjson) {
         vector_val->vector_dim = FSI_VECTOR_MAX_DIM;
 
         cJSON* internal_value = NULL;
-        if(fsi_value_type == VALUE_TYPE_IMAGE_BASE64) {
-            cJSON* image_base64 = cJSON_GetObjectItemCaseSensitive(value, "image_base64");
-            if(!image_base64) {
-                printf("Value type is VALUE_TYPE_IMAGE_BASE64, but field 'image_base64' is missing. Query parsing failed.");
+        if(fsi_value_type == VALUE_TYPE_IMAGE_BASE64 
+            || fsi_value_type == VALUE_TYPE_IMAGE_PATH
+            || fsi_value_type == VALUE_TYPE_IMAGE_PROMPT) {
+            if(!value_dot_value) {
+                printf("Value type is %d, but field 'value' is missing. Query parsing failed.\n", fsi_value_type);
                 return NULL;
             }
 
-            vector_val->char_val = strdup(image_base64->valuestring);
-        } else if(fsi_value_type == VALUE_TYPE_IMAGE_PATH) {
-            cJSON* image_path = cJSON_GetObjectItemCaseSensitive(value, "image_path");
-            if(!image_path) {
-                printf("Value type is VALUE_TYPE_IMAGE_PATH, but field 'image_path' is missing. Query parsing failed.");
-                return NULL;
-            }
-
-            vector_val->char_val = strdup(image_path->valuestring);
-        } else if(fsi_value_type == VALUE_TYPE_IMAGE_PROMPT) {
-            cJSON* image_promt = cJSON_GetObjectItemCaseSensitive(value, "image_prompt");
-            if(!image_promt) {
-                printf("Value type is VALUE_TYPE_IMAGE_PROMPT, but field 'image_promt' is missing. Query parsing failed.");
-                return NULL;
-            }
-
-            vector_val->char_val = strdup(image_promt->valuestring);
+            vector_val->char_val = strdup(value_dot_value->valuestring);
         } else if(fsi_value_type == VALUE_TYPE_VECTOR) {
-            cJSON* vector = cJSON_GetObjectItemCaseSensitive(value, "vector");
-            if(!vector) {
-                printf("Value type is VALUE_TYPE_VECTOR, but field 'vector' is missing. Query parsing failed.");
+            if(!value_dot_value) {
+                printf("Value type is VALUE_TYPE_VECTOR, but field 'value' is missing. Query parsing failed.\n");
                 return NULL;
             }
-            size_t len = cJSON_GetArraySize(vector);
+            size_t len = cJSON_GetArraySize(value_dot_value);
             vector_val->vector_dim = len;
 
             vector_val->vector_val = malloc(sizeof(float) * len);
             for (size_t i = 0; i < len; i++) {
-                vector_val->vector_val[i] = cJSON_GetArrayItem(vector, i)->valuedouble;
+                vector_val->vector_val[i] = cJSON_GetArrayItem(value_dot_value, i)->valuedouble;
             }
         }
     }

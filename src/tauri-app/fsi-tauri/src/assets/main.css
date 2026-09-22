@@ -1,0 +1,65 @@
+*, *::before, *::after {
+  box-sizing: border-box;   /* make padding and borders included inside the width */
+}
+
+body {
+    margin: 0;
+    min-height: 100dvh;
+    font-family: system-ui, -apple-system, sans-serif;
+    background-color: var(--bg-color-l0);
+}
+
+h1 {
+    color: var(--bg-color-l0-font);
+}
+
+input {
+    background-color: var(--bg-color-l0-controls);
+    border: 4px solid var(--bg-color-l0-border);
+    border-radius: 0.5rem;
+    box-shadow: 0 0 10px 10px rgba(0, 0, 0, 0.172);
+    background-clip: padding-box;
+    font-size: 1rem;
+    padding: 0.6em 1em;
+}
+
+input:focus {
+  outline: none; /* Removes browser default blue outline */
+  border-color: var(--accessability-color-focus); /* Custom border color */
+}
+
+input::placeholder {
+    color: #000000;
+}
+
+button {
+  cursor: pointer;
+  background-color: var(--bg-color-l0-controls);
+  border: none;
+  border-radius: 0.5rem;
+  padding: 0.6em 1.2em;
+  font-size: 1rem;
+  transition: background-color 0.15s ease, opacity 0.15s ease;
+}
+
+button:hover {
+  opacity: var(--hover-opacity);
+}
+
+button:disabled {
+  cursor: not-allowed; /* Shows a blocked/prohibited cursor */
+  opacity: var(--disabled-opacity);
+}
+
+:root {
+    --bg-color-l0: rgb(72, 3, 3);
+    --bg-color-l0-controls: rgba(255, 255, 255, 0.8);
+    --bg-color-l0-inputs: rgba(255, 255, 255);
+    --bg-color-l0-border: rgb(72, 3, 3, 0.8);
+    --bg-color-l0-font: rgb(236, 76, 76);
+
+    --disabled-opacity: 0.6;
+    --hover-opacity: 0.9;
+
+    --accessability-color-focus: #3b82f6;
+}

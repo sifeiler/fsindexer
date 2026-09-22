@@ -1,0 +1,30 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "fsi-tauri",
+  "version": "0.1.0",
+  "identifier": "com.simon.fsi-tauri",
+  "build": {
+    "beforeDevCommand": "bash ../../../build_debug_server.sh && npm run dev",
+    "beforeBuildCommand": "bash ../../../build_debug_server.sh && npm run build",
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "fsi-tauri",
+        "width": 800,
+        "height": 600
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "externalBin": ["binaries/indexer"],
+    "icon": []
+  }
+}

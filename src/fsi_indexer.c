@@ -308,9 +308,7 @@ mos_t_qry_search_step* fsi_idr_fsi_to_mos_query(fsi_t_file_query* fsi_query, str
         return NULL;
     }
 
-    MOS_QRY_OPERATOR mos_operator = fsi_to_mos_operator_mapping[fsi_query->operator];
-
-    if(fsi_query->operator == FSI_QRY_OP_OR || fsi_query->operator == FSI_QRY_OP_AND) {
+    if(fsi_query->operator == MOS_QRY_OP_OR || fsi_query->operator == MOS_QRY_OP_AND) {
         size_t sub_query_count = fsi_query->data.logical.sub_query_count;
         mos_t_qry_search_step** sub_steps = calloc(1, sub_query_count * sizeof(mos_t_qry_search_step*));
         
@@ -332,11 +330,11 @@ mos_t_qry_search_step* fsi_idr_fsi_to_mos_query(fsi_t_file_query* fsi_query, str
 
         mos_query->sub_steps = sub_steps;
         mos_query->step_count = sub_query_count;
-        mos_query->op = fsi_to_mos_operator_mapping[fsi_query->operator];
+        mos_query->op = fsi_query->operator;
         return mos_query;
     }
 
-    if(fsi_query->operator == FSI_QRY_OP_NOT) {
+    if(fsi_query->operator == MOS_QRY_OP_NOT) {
         mos_query->op = MOS_QRY_OP_NOT;
         mos_query->step_count = 1;
 
@@ -359,12 +357,12 @@ mos_t_qry_search_step* fsi_idr_fsi_to_mos_query(fsi_t_file_query* fsi_query, str
 
     // at this point it's a relational query
     memcpy(mos_query->attribute_query.attribute_name, fsi_query->data.relational.attribute_name, fsi_query->data.relational.attribute_name_len);
-    mos_query->op = mos_operator;
+    mos_query->op = fsi_query->operator;
     mos_query->step_count = 0;
 
     mos_t_attr_value* mos_attr_value = &mos_query->attribute_query.value;
     
-    if(attribute_query->operator == FSI_QRY_OP_SIMILAR) {
+    if(attribute_query->operator == MOS_QRY_OP_SIMILAR) {
         fsi_t_qry_value_similar vector_query = attribute_query->value.vector_val;
         size_t vector_size_bytes = sizeof(float) * vector_query.vector_dim;
 
@@ -377,6 +375,8 @@ mos_t_qry_search_step* fsi_idr_fsi_to_mos_query(fsi_t_file_query* fsi_query, str
             //image is part of char_val as a base64 representation
             // get configured vector dimension from mos, as the user can provide whatever number
             fsi_clip_image_base64_get_vector_f32(clip_context, vector_query.char_val, strlen(vector_query.char_val), vector_buf, vector_query.vector_dim);
+        } else if(attribute_query->value_type == VALUE_TYPE_IMAGE_PROMPT) {
+            fsi_clip_text_get_vector_f32(clip_context, vector_query.char_val, vector_buf, vector_query.vector_dim);
         } else if(attribute_query->value_type == VALUE_TYPE_IMAGE_PATH) {
             fsi_clip_image_get_vector_f32(clip_context, vector_query.char_val, vector_buf, vector_query.vector_dim);
         }

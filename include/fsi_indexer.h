@@ -51,17 +51,6 @@ typedef struct fsi_t_file_data {
     fsi_file_info file_info;
 } fsi_t_file_data;
 
-typedef enum FSI_QRY_OPERATOR {
-    FSI_QRY_OP_OR   = 1 << 0,
-    FSI_QRY_OP_AND  = 1 << 1,
-    FSI_QRY_OP_NOT  = 1 << 2,
-    FSI_QRY_OP_EQ   = 1 << 3,
-    FSI_QRY_OP_SIMILAR   = 1 << 4
-} FSI_QRY_OPERATOR;
-
-#define FSI_LOGICAL_OP (FSI_QRY_OP_OR | FSI_QRY_OP_AND | FSI_QRY_OP_NOT)
-#define FSI_RELATIONAL_OP (FSI_QRY_OP_EQ | FSI_QRY_OP_SIMILAR)
-
 typedef enum FSI_QRY_VALUE_TYPE {
     VALUE_TYPE_IMAGE_PATH,
     VALUE_TYPE_IMAGE_PROMPT,
@@ -84,7 +73,7 @@ typedef struct fsi_t_qry_value_similar {
 typedef struct fsi_t_attribute_query {
     char* attribute_name;
     size_t attribute_name_len;
-    FSI_QRY_OPERATOR operator;
+    MOS_QRY_OPERATOR operator;
     FSI_QRY_VALUE_TYPE value_type;
     union {
         char* char_val;
@@ -97,7 +86,7 @@ typedef struct fsi_t_attribute_query {
 typedef struct fsi_t_file_query fsi_t_file_query;
 
 typedef struct fsi_t_file_query {
-    FSI_QRY_OPERATOR operator;
+    MOS_QRY_OPERATOR operator;
     union {
         struct {
             fsi_t_file_query** sub_queries;
@@ -111,14 +100,6 @@ typedef struct fsi_t_file_query {
         fsi_t_attribute_query relational;
     } data;
 } fsi_t_file_query;
-
-static MOS_QRY_OPERATOR fsi_to_mos_operator_mapping[] = {
-    [FSI_QRY_OP_OR] = MOS_QRY_OP_OR,
-    [FSI_QRY_OP_AND] = MOS_QRY_OP_AND,
-    [FSI_QRY_OP_NOT] = MOS_QRY_OP_NOT,
-    [FSI_QRY_OP_EQ] = MOS_QRY_OP_EQ,
-    [FSI_QRY_OP_SIMILAR] = MOS_QRY_OP_SIMILAR
-};
 
 fsi_t_idr_indexer* fsi_idr_create(fsi_t_idr_config* cfg);
 void fsi_idr_start(fsi_t_idr_indexer* indexer, const char** root_paths, size_t path_count);
