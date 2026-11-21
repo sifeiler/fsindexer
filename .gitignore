@@ -3,6 +3,11 @@
 build-*/
 cmake_commands.txt
 Testing/
+build/
+node_modules
+target/
+binaries/
+gen/
 
 *.db
 *.exe

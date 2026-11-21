@@ -3,6 +3,7 @@
 
 #include "../include/fsi_utils.h"
 #include "../include/fsi_clip.h"
+#include "../include/fsi_os.h"
 #include "../include/thr_thread.h"
 
 #include <inttypes.h>
@@ -74,6 +75,7 @@ void fsi_clip_image_get_vector_f32(struct clip_ctx* clip_ctx, const char* image_
     stbi_image_free(img_bytes);
 
     bool success = clip_image_encode(clip_ctx, 8, &img_res, vector_out, true);
+    clip_image_f32_clean(&img_res);
     
     if (!success) {
         fprintf(stderr, "[CLIP ERROR] clip_image_encode failed for: %s\n", image_path);
@@ -149,7 +151,8 @@ void fsi_clip_image_base64_get_vector_f32(struct clip_ctx* clip_ctx, char* image
     stbi_image_free(img_bytes);
 
     bool success = clip_image_encode(clip_ctx, 8, &img_res, vector_out, true);
-    
+    clip_image_f32_clean(&img_res);
+
     if (!success) {
         fprintf(stderr, "[CLIP ERROR] clip_image_encode failed for base64 image\n");
         memset(vector_out, 0, vector_out_dim * sizeof(float));

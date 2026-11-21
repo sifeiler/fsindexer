@@ -17,6 +17,8 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 
+add_compile_definitions(_GNU_SOURCE)
+
 # ── Per-build-type compiler/sanitizer flags ─────────────────────────────────
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
     add_compile_options(-O3 -march=native -mavx2 -mfma -DNDEBUG)    # no sanitizers, no -g, no -O0 in Release
@@ -56,6 +58,25 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(clip_cpp)
 
+set(MODEL_PATH "${CMAKE_SOURCE_DIR}/models/clip-vit-base-patch32.gguf")
+set(MODEL_URL  "https://huggingface.co/mys/ggml_clip-vit-base-patch32/resolve/main/clip-vit-base-patch32_ggml-model-f32.gguf?download=true")
+
+if(NOT EXISTS "${MODEL_PATH}")
+    message(STATUS "Downloading CLIP model...")
+    file(DOWNLOAD
+        "${MODEL_URL}"
+        "${MODEL_PATH}"
+        SHOW_PROGRESS
+        STATUS dl_status
+        # EXPECTED_HASH SHA256=<hash>
+    )
+    list(GET dl_status 0 dl_code)
+    if(NOT dl_code EQUAL 0)
+        file(REMOVE "${MODEL_PATH}")  # don't leave a partial file behind
+        message(FATAL_ERROR "Model download failed: ${dl_status}")
+    endif()
+endif()
+
 # main library
 add_library(fsindexer STATIC 
     src/fsi_crawler.c
@@ -89,8 +110,11 @@ if(NOT IS_RELEASE_BUILD)
     target_compile_options(ggml PRIVATE -fno-sanitize=undefined)
 endif()
 
+add_library(libb64_cdecode STATIC third_party/b64/cdecode.c)
+target_include_directories(libb64_cdecode PUBLIC third_party/b64)
+
 # Link fsindexer dependencies publicly so executables inherit them cleanly
-target_link_libraries(fsindexer PUBLIC clip ggml stdc++ mos_storage)
+target_link_libraries(fsindexer PUBLIC clip ggml stdc++ mos_storage libb64_cdecode)
 
 if(BUILD_WEB_SERVER)
     message(STATUS "Building fsindexer with HTTP Server and Web UI")
@@ -108,21 +132,18 @@ if(BUILD_WEB_SERVER)
     add_library(cjson STATIC third_party/cJSON/cJSON.c)
     target_include_directories(cjson PUBLIC third_party/cJSON)
 
-    add_library(libb64_cdecode STATIC third_party/b64/cdecode.c)
-    target_include_directories(libb64_cdecode PUBLIC third_party/b64)
-
     # Add compile flag to C code if needed
     target_compile_definitions(indexer PRIVATE ENABLE_WEB_SERVER)
 
     # Link Core Engine + Web Server
-    target_link_libraries(indexer PRIVATE fsindexer mongoose cjson libb64_cdecode)
+    target_link_libraries(indexer PRIVATE fsindexer mongoose cjson)
 
     # OS-Specific Network Libraries (Windows requires ws2_32)
     if(WIN32)
         target_link_libraries(indexer PRIVATE ws2_32)
     endif()
 
-    target_link_libraries(fsindexer PUBLIC mongoose cjson libb64_cdecode)
+    target_link_libraries(fsindexer PUBLIC mongoose cjson)
 
     # (Optional) Automatic Web Frontend Embed Rule
     # Reads compiled Vue dist/ files and creates header headers/arrays

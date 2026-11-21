@@ -1,7 +1,15 @@
+## Attention
+Currently, the indexer only works for Linux systems, but many components were design platform independent so Windows/Mac support will come soon.
+
+I designed this indexer to work mainly for images, so the cmd version described below can be used to search for images via prompt or reference images.
+
+There is also a server version where one can search for file data via logical and relational queries, but this is currently in development and can therefor not be used yet. I'm also working on a tauri frontend.
 ## Building the indexer
-For the indexer to work, one has to clone the MemObjStorage library first.
+For the indexer cmd version to work, one has to clone the MemObjStorage library first.
 Make sure to clone it into the same directory as the indexer.
 https://github.com/sifeiler/MemObjStorage
+
+Please be aware that the following downloads .gguf files from hugging face.
 
 After that, run `build_debug.sh` or `build_release.sh`
 
